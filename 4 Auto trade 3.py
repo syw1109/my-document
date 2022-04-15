@@ -227,6 +227,12 @@ def get_ma5E(ticker):
     ma5E = df['close'].rolling(5).mean().iloc[-1]
     return ma5E
 
+def get_ma10E(ticker):
+    """10일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=10)
+    ma10E = df['close'].rolling(10).mean().iloc[-1]
+    return ma10E        
+
 def get_ma20E(ticker):
     """20일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=20)
@@ -262,25 +268,7 @@ def get_ma10A(ticker):
     df = pyupbit.get_ohlcv(ticker, interval="day", count=10)
     ma10A = df['close'].rolling(10).mean().iloc[-1]
     return ma10A 
-  
-
-def get_ma5L(ticker):
-    """5일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=5)
-    ma5L = df['close'].rolling(5).mean().iloc[-1]
-    return ma5L  
-
-def get_ma10L(ticker):
-    """10일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=10)
-    ma10L = df['close'].rolling(10).mean().iloc[-1]
-    return ma10L  
-
-def get_ma20L(ticker):
-    """20일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=20)
-    ma20L = df['close'].rolling(20).mean().iloc[-1]
-    return ma20L   
+   
 
 def get_ma5bch(ticker):
     """5일 이동 평균선 조회"""
@@ -409,6 +397,7 @@ while True:
         current_priceE = get_current_priceE("KRW-ETH") 
         target_priceE = get_target_priceE("KRW-ETH", 0.25) 
         ma5E = get_ma5E("KRW-ETH")
+        ma10E = get_ma10E("KRW-ETH")
         ma20E = get_ma20E("KRW-ETH")        
         target_percentE = get_target_percentE("KRW-ETH")
 
@@ -477,7 +466,7 @@ while True:
 
 
         if start_time < now < end_time - datetime.timedelta(minutes=10)  :
-            if target_priceE < current_priceE and ma5E < current_priceE and ma20E < current_priceE:
+            if target_priceE < current_priceE and ma5E < current_priceE and ma20E < current_priceE and ma10E < current_priceE:
                 krw = get_balance("KRW")
                 eth = get_balance("ETH")
                 if target_percentE  <= 0.015:
@@ -486,7 +475,7 @@ while True:
 
                 elif 0.015 < target_percentE:
                     if eth < 0.0005:
-                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE/170))
+                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE/150))
 
 
         else:               
