@@ -47,6 +47,14 @@ def get_target_priceA(ticker, k):
     return target_priceA     
     
 
+def get_target_priceL(ticker, k):
+    """변동성 돌파 전략으로 매수 목표가 조회"""
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceL = df.iloc[0]['close'] + (df.iloc[0]['high'] - df.iloc[0]['low']) * k
+    return target_priceL 
+
 def get_target_pricebch(ticker, k):
     """변동성 돌파 전략으로 매수 목표가 조회"""
     """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
@@ -104,7 +112,13 @@ def get_open_priceA(ticker):
     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
     open_priceA = df.iloc[0]['close']
     return open_priceA     
- 
+
+
+def get_open_priceL(ticker):
+    """변동성 돌파 전략으로 매수 목표가 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    open_priceL = df.iloc[0]['close']
+    return open_priceL   
 
 def get_open_pricebch(ticker):
     """변동성 돌파 전략으로 매수 목표가 조회"""
@@ -132,7 +146,6 @@ def get_open_priceeos(ticker):
 
 
 
-
 def get_target_percent(ticker):
     """변동성 돌파 전략에 전날 변동성 계산"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
@@ -157,6 +170,8 @@ def get_target_percentA(ticker):
     target_percentA = (df.iloc[0]['high'] - df.iloc[0]['low'])/df.iloc[0]['close'] 
     return target_percentA 
  
+
+
 
 def get_target_percentbch(ticker):
     """변동성 돌파 전략에 전날 변동성 계산"""
@@ -427,17 +442,17 @@ while True:
         target_percenteos = get_target_percenteos("KRW-EOS")         
 
 
-        if start_time < now < end_time - datetime.timedelta(minutes=10)  :
 
-            if target_price < current_price and ma5 < current_price and ma20 < current_price:
-                krw = get_balance("KRW")
+        if start_time < now < end_time + datetime.timedelta(minutes=32):
+
+            if target_price > current_price:
                 btc = get_balance("BTC")
                 if target_percent  <= 0.015:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.17))
+                        buy_result = upbit.buy_market_order("KRW-BTC", 50000*(0.5))
                 elif 0.015 < target_percent:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/400))
+                        buy_result = upbit.buy_market_order("KRW-BTC", 50000*(1/target_percent/100))               
 
         else:
             btc = get_balance("BTC")
@@ -452,11 +467,11 @@ while True:
                 eth = get_balance("ETH")
                 if target_percentE  <= 0.015:
                     if eth < 0.0005:
-                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.13))
+                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.3))
 
                 elif 0.015 < target_percentE:
                     if eth < 0.0005:
-                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE/550))
+                        buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE/150))
 
 
         else:               
@@ -471,11 +486,11 @@ while True:
                 xrp = get_balance("XRP")
                 if target_percentX  <= 0.015:
                     if xrp < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-XRP", krw*(0.2))
+                        buy_result = upbit.buy_market_order("KRW-XRP", krw*(0.4))
 
                 elif 0.015 < target_percentX:
                     if xrp < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-XRP", krw*(1/target_percentX/400))
+                        buy_result = upbit.buy_market_order("KRW-XRP", krw*(1/target_percentX/140))
 
 
         else:               
@@ -490,11 +505,11 @@ while True:
                 ada = get_balance("ADA")
                 if target_percentA  <= 0.015:
                     if ada < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-ADA", krw*(0.2))
+                        buy_result = upbit.buy_market_order("KRW-ADA", krw*(0.4))
 
                 elif 0.015 < target_percentA:
                     if ada < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-ADA", krw*(1/target_percentA/400))
+                        buy_result = upbit.buy_market_order("KRW-ADA", krw*(1/target_percentA/130))
 
         else:               
             ada = get_balance("ADA")
@@ -510,11 +525,11 @@ while True:
                 bch = get_balance("BCH")
                 if target_percentbch  <= 0.015:
                     if bch < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(0.1))
+                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(0.25))
 
                 elif 0.015 < target_percentbch:
                     if bch < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(1/target_percentbch/600))
+                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(1/target_percentbch/180))
 
         else:
             bch = get_balance("BCH")
@@ -528,11 +543,11 @@ while True:
                 ltc = get_balance("LTC")
                 if target_percentltc  <= 0.015:
                     if ltc < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-LTC", krw*(0.1))
+                        buy_result = upbit.buy_market_order("KRW-LTC", krw*(0.2))
 
                 elif 0.015 < target_percentltc:
                     if ltc < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-LTC", krw*(1/target_percentltc/600))
+                        buy_result = upbit.buy_market_order("KRW-LTC", krw*(1/target_percentltc/200))
 
         else:
             ltc = get_balance("LTC")
@@ -546,11 +561,11 @@ while True:
                 xlm = get_balance("XLM")
                 if target_percentxlm  <= 0.015:
                     if xlm < 1:
-                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(0.1))
+                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(0.2))
 
                 elif 0.015 < target_percentxlm:
                     if xlm < 1:
-                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(1/target_percentxlm/600))
+                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(1/target_percentxlm/200))
 
         else:
             xlm = get_balance("XLM")
@@ -565,11 +580,11 @@ while True:
                 eos = get_balance("EOS")
                 if target_percenteos  <= 0.015:
                     if eos < 0.1:
-                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(0.1))
+                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(0.2))
 
                 elif 0.015 < target_percenteos:
                     if eos < 0.1:
-                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(1/target_percenteos/600))
+                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(1/target_percenteos/200))
 
         else:
             eos = get_balance("EOS")
