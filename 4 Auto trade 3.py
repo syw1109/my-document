@@ -437,7 +437,7 @@ while True:
                         buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.17))
                 elif 0.015 < target_percent:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/400))
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/420))
 
         else:
             btc = get_balance("BTC")
@@ -514,7 +514,7 @@ while True:
 
                 elif 0.015 < target_percentbch:
                     if bch < 0.01:
-                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(1/target_percentbch/600))
+                        buy_result = upbit.buy_market_order("KRW-BCH", krw*(1/target_percentbch/650))
 
         else:
             bch = get_balance("BCH")
@@ -550,7 +550,7 @@ while True:
 
                 elif 0.015 < target_percentxlm:
                     if xlm < 1:
-                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(1/target_percentxlm/600))
+                        buy_result = upbit.buy_market_order("KRW-XLM", krw*(1/target_percentxlm/650))
 
         else:
             xlm = get_balance("XLM")
@@ -569,7 +569,7 @@ while True:
 
                 elif 0.015 < target_percenteos:
                     if eos < 0.1:
-                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(1/target_percenteos/600))
+                        buy_result = upbit.buy_market_order("KRW-EOS", krw*(1/target_percenteos/700))
 
         else:
             eos = get_balance("EOS")
