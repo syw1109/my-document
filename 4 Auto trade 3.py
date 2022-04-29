@@ -200,7 +200,13 @@ def get_ma20(ticker):
     """20일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=20)
     ma20 = df['close'].rolling(20).mean().iloc[-1]
-    return ma20    
+    return ma20 
+
+def get_ma30(ticker):
+    """30일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=30)
+    ma30 = df['close'].rolling(30).mean().iloc[-1]
+    return ma30         
 
 def get_ma5E(ticker):
     """5일 이동 평균선 조회"""
@@ -261,7 +267,13 @@ def get_ma20bch(ticker):
     """20일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=20)
     ma20bch = df['close'].rolling(20).mean().iloc[-1]
-    return ma20bch   
+    return ma20bch  
+
+def get_ma30bch(ticker):
+    """30일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=30)
+    ma30bch = df['close'].rolling(30).mean().iloc[-1]
+    return ma30bch            
 
 def get_ma5ltc(ticker):
     """5일 이동 평균선 조회"""
@@ -372,6 +384,7 @@ while True:
         target_price = get_target_price("KRW-BTC", 0.4)
         ma5 = get_ma5("KRW-BTC")
         ma20 = get_ma20("KRW-BTC")
+        ma30 = get_ma30("KRW-BTC")
         target_percent = get_target_percent("KRW-BTC") 
 
         open_priceE = get_open_priceE("KRW-ETH")
@@ -392,16 +405,17 @@ while True:
 
         open_priceA = get_open_priceA("KRW-ADA")
         current_priceA = get_current_priceA("KRW-ADA")
-        target_priceA = get_target_priceA("KRW-ADA", 0.5)
+        target_priceA = get_target_priceA("KRW-ADA", 0.3)
         ma5A = get_ma5A("KRW-ADA")
         ma10A = get_ma10A("KRW-ADA")
         target_percentA = get_target_percentA("KRW-ADA")
 
         open_pricebch = get_open_pricebch("KRW-BCH")
         current_pricebch = get_current_pricebch("KRW-BCH")
-        target_pricebch = get_target_pricebch("KRW-BCH", 0.3)
+        target_pricebch = get_target_pricebch("KRW-BCH", 0.1)
         ma5bch = get_ma5bch("KRW-BCH")
         ma20bch = get_ma20bch("KRW-BCH")
+        ma30bch = get_ma30bch("KRW-BCH")
         target_percentbch = get_target_percentbch("KRW-BCH") 
 
         open_priceltc = get_open_priceltc("KRW-LTC")
@@ -437,7 +451,7 @@ while True:
                         buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.17))
                 elif 0.015 < target_percent:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/420))
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/420))                  
 
         else:
             btc = get_balance("BTC")
@@ -505,7 +519,7 @@ while True:
 
         if start_time < now < end_time - datetime.timedelta(minutes=10) :
 
-            if target_pricebch < current_pricebch and ma5bch < current_pricebch and ma20bch < current_pricebch:
+            if target_pricebch < current_pricebch and ma5bch < current_pricebch and ma20bch < current_pricebch and ma30bch < current_pricebch:
                 krw = get_balance("KRW")
                 bch = get_balance("BCH")
                 if target_percentbch  <= 0.015:

@@ -14,7 +14,62 @@ def post_message(token, channel, text):
         data={"channel": channel,"text": text}
     )
 
-     
+def get_target_price(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_price = df.iloc[1]['low']
+    return target_price
+
+def get_target_priceE(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceE = df.iloc[1]['low']
+    return target_priceE
+
+def get_target_priceX(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceX = df.iloc[1]['low']
+    return target_priceX
+
+def get_target_priceA(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceA = df.iloc[1]['low']
+    return target_priceA     
+    
+
+def get_target_pricebch(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_pricebch = df.iloc[1]['low']
+    return target_pricebch   
+
+def get_target_priceltc(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceltc = df.iloc[1]['low']
+    return target_priceltc
+
+def get_target_pricexlm(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_pricexlm = df.iloc[1]['low']
+    return target_pricexlm         
+
+def get_target_priceeos(ticker):
+    """ohlcv : 주식의 종가,시가, 최고,최저 정보 불러오는 함수"""
+    """iloc : 인덱스 함수 [1]이 오늘, [0]은 어제"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+    target_priceeos = df.iloc[1]['low']
+    return target_priceeos           
 
 def get_ma5(ticker):
     """5일 이동 평균선 조회"""
@@ -266,12 +321,14 @@ while True:
 
 
         current_price = get_current_price("KRW-BTC")
+        target_price = get_target_price("KRW-BTC")
         ma5 = get_ma5("KRW-BTC")
         ma10 = get_ma10("KRW-BTC")
         ma20 = get_ma20("KRW-BTC")
         ma30 = get_ma30("KRW-BTC")
 
         current_priceE = get_current_priceE("KRW-ETH") 
+        target_priceE = get_target_priceE("KRW-ETH")
         ma5E = get_ma5E("KRW-ETH")
         ma10E = get_ma10E("KRW-ETH")
         ma20E = get_ma20E("KRW-ETH")
@@ -279,17 +336,20 @@ while True:
 
 
         current_priceX = get_current_priceX("KRW-XRP") 
+        target_priceX = get_target_priceX("KRW-XRP")
         ma5X = get_ma5X("KRW-XRP")
         ma10X = get_ma10X("KRW-XRP")
         ma20X = get_ma20X("KRW-XRP")
         ma30X = get_ma30X("KRW-XRP")
 
         current_priceA = get_current_priceA("KRW-ADA")
+        target_priceA = get_target_priceA("KRW-ADA")
         ma5A = get_ma5A("KRW-ADA")
         ma10A = get_ma10A("KRW-ADA")
         ma30A = get_ma30A("KRW-ADA")
 
         current_pricebch = get_current_pricebch("KRW-BCH")
+        target_pricebch = get_target_pricebch("KRW-BCH")
         ma5bch = get_ma5bch("KRW-BCH")
         ma10bch = get_ma10bch("KRW-BCH")
         ma20bch = get_ma20bch("KRW-BCH")
@@ -297,6 +357,7 @@ while True:
 
 
         current_priceltc = get_current_priceltc("KRW-LTC")
+        target_priceltc = get_target_priceltc("KRW-LTC")
         ma5ltc = get_ma5ltc("KRW-LTC")
         ma10ltc = get_ma10ltc("KRW-LTC")        
         ma20ltc = get_ma20ltc("KRW-LTC")    
@@ -304,6 +365,7 @@ while True:
 
 
         current_pricexlm = get_current_pricexlm("KRW-XLM")
+        target_pricexlm = get_target_pricexlm("KRW-XLM")
         ma5xlm = get_ma5xlm("KRW-XLM")
         ma10xlm = get_ma10xlm("KRW-XLM")
         ma20xlm = get_ma20xlm("KRW-XLM")
@@ -311,6 +373,7 @@ while True:
 
 
         current_priceeos = get_current_priceeos("KRW-EOS")
+        target_priceeos = get_target_priceeos("KRW-EOS")
         ma5eos = get_ma5eos("KRW-EOS")
         ma10eos = get_ma10eos("KRW-EOS")
         ma20eos = get_ma20eos("KRW-EOS")
@@ -318,13 +381,13 @@ while True:
       
 
 
-        if ma10*0.99 < current_price and ma30*0.99 < current_price :
+        if ma10 < target_price :
 
-            if ma10*1.015 < current_price and ma30*1.015 < current_price :
+            if ma10 < current_price :
                 krw = get_balance("KRW")
                 btc = get_balance("BTC")
                 if btc < 0.0001:
-                    buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.15))
+                    buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.2))
 
         else:
             btc = get_balance("BTC")
@@ -366,7 +429,7 @@ while True:
                 krw = get_balance("KRW")
                 ada = get_balance("ADA")
                 if ada < 0.01:
-                    buy_result = upbit.buy_market_order("KRW-ADA", krw*(0.15))
+                    buy_result = upbit.buy_market_order("KRW-ADA", krw*(0.20))
 
         else:               
             ada = get_balance("ADA")
