@@ -23,7 +23,7 @@ def get_open_price(ticker):
 def get_target_percent(ticker):
     """변동성 돌파 전략에 전날 변동성 계산"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
-    target_percent = (df.iloc[0]['high'] - df.iloc[0]['low'])/df.iloc[0]['close'] 
+    target_percent = (df.iloc[0]['high'] - df.iloc[0]['low'])/df.iloc[0]['close']
     return target_percent        
 
 def get_start_time(ticker):
@@ -78,7 +78,7 @@ while True:
 
         open_price = get_open_price("KRW-BTC")
         current_price = get_current_price("KRW-BTC")
-        target_price = get_target_price("KRW-BTC", 0.4)
+        target_price = get_target_price("KRW-BTC", 0.3)
         ma5 = get_ma5("KRW-BTC")
         ma20 = get_ma20("KRW-BTC")
         ma30 = get_ma30("KRW-BTC")        
@@ -100,8 +100,6 @@ while True:
             btc = get_balance("BTC")
             if btc > 0.00004:
                 sell_result = upbit.sell_market_order("KRW-BTC", btc)
-
-
 
         time.sleep(1)
     except Exception as e:

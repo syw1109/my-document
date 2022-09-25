@@ -169,15 +169,15 @@ while True:
 
         if start_time < now < end_time - datetime.timedelta(minutes=10)  :
 
-            if target_price < current_price and ma5 < current_price and ma20 < current_price:
+            if target_price > current_price and ma5 < current_price and ma20 > current_price:
                 krw = get_balance("KRW")
                 btc = get_balance("BTC")
                 if target_percent  <= 0.015:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.25))
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.01))
                 elif 0.015 < target_percent:
                     if btc < 0.0001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/350))                  
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent/1000))                  
 
         else:
             btc = get_balance("BTC")
