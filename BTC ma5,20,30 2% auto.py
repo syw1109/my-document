@@ -74,7 +74,7 @@ while True:
     try:
         now = datetime.datetime.now()
         start_time = get_start_time("KRW-BTC")
-        end_time = start_time + datetime.timedelta(hours=24)
+        end_time = start_time + datetime.timedelta(days=1)
 
         open_price = get_open_price("KRW-BTC")
         current_price = get_current_price("KRW-BTC")
@@ -84,7 +84,7 @@ while True:
         ma30 = get_ma30("KRW-BTC")        
         target_percent = get_target_percent("KRW-BTC") 
 
-        if start_time < now < end_time - datetime.timedelta(minutes=10) or open_price*0.996 > current_price :
+        if start_time < now < end_time - datetime.timedelta(seconds=10) or open_price*0.996 > current_price :
 
             if target_price <= current_price and ma5 < current_price and ma20 < current_price and ma30 < current_price:
                 krw = get_balance("KRW")

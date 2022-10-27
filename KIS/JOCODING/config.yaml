@@ -1,0 +1,18 @@
+#koreainvestment developer info
+#홈페이지에서 API서비스 신청시 받은 Appkey, Appsecret 값 설정
+APP_KEY: "PSbORoBOFbyVBPXzWR4YuParPCLoQjcaS3TR"
+APP_SECRET: "ahUe85wXX5oD79s25323xjMWKJBiR/LDIk6jfohzfnTNSgoh4QhbyEehsV6HQhOD3xKdAMf8L02PgmC5uDFrntDYJJFN8r+Af/jwceqfzpvbdYL7loITmQQrL+K6qTmgU9Z0blQHExO1eghWccVjQuDsmsOp4F46TZ6IYZoa6Xdhetk2bbI="
+
+#계좌번호
+CANO: "74237248"
+#계좌번호 - 뒷자리
+ACNT_PRDT_CD: "01"
+PHONE: "01035117074"
+
+#domain info
+#실전투자
+ACTUAL_DOMAIN: "https://openapi.koreainvestment.com:9443" 
+#웹소켓
+ops: "ws://ops.koreainvestment.com:21000" 
+#모의투자서비스
+vts: "https://openapivts.koreainvestment.com:29443"
