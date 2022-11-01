@@ -74,7 +74,7 @@ while True:
     try:
         now = datetime.datetime.now()
         start_time = get_start_time("KRW-BTC")
-        end_time = start_time + datetime.timedelta(hours=24) - datetime.timedelta(minutes=2)
+        end_time = start_time + datetime.timedelta(hours=12) + datetime.timedelta(minutes=26)
 
         open_price = get_open_price("KRW-BTC")
         current_price = get_current_price("KRW-BTC")
@@ -82,26 +82,33 @@ while True:
         ma5 = get_ma5("KRW-BTC")
         ma20 = get_ma20("KRW-BTC")
         ma30 = get_ma30("KRW-BTC")        
-        target_percent = get_target_percent("KRW-BTC")*100 
+        target_percent = get_target_percent("KRW-BTC") 
 
         if start_time < now < end_time or open_price*0.996 > current_price :
 
-            if target_price <= current_price and ma5 <= current_price and ma20 <= current_price and ma30 <= current_price:
+            if target_price > current_price and ma20 < current_price and ma30 < current_price:
                 krw = get_balance("KRW")
                 btc = get_balance("BTC")
                 if target_percent  <= 0.02:
-                    if btc < 0.001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.999))
+                    if btc < 0.0001:
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.1))
                 elif 0.02 < target_percent:
-                    if btc < 0.001:
-                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(2/target_percent))                  
+                    if btc < 0.0001:
+                        buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.1))                  
 
         else:
             btc = get_balance("BTC")
-            if btc > 0.0005:
+            if btc > 0.00004:
                 sell_result = upbit.sell_market_order("KRW-BTC", btc)
+
+
+
+
 
         time.sleep(5)
     except Exception as e:
         print(e)
         time.sleep(1)
+
+
+
