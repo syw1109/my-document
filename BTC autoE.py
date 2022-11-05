@@ -184,7 +184,7 @@ while True:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE)) 
         else:
-            btc = get_balance("ETH")
+            eth = get_balance("ETH")
             if eth > 0.005:
                 sell_result = upbit.sell_market_order("KRW-ETH", eth)
 
