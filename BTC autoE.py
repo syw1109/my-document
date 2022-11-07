@@ -143,19 +143,19 @@ while True:
             if target_price <= current_price and ma5 <= current_price and ma20 <= current_price and ma30 <= current_price:
 
                 if eth > 0.01:
-                    if target_percent  <= 0.02:
+                    if target_percent  <= 2:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.999))
-                    elif 0.02 < target_percent:
+                    elif 2 < target_percent:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(2/target_percent))                  
 
 
                 if eth < 0.01:
-                    if target_percent  <= 0.02:
+                    if target_percent  <= 2:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.499))
-                    elif 0.02 < target_percent:
+                    elif 2 < target_percent:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent)) 
         else:
@@ -168,19 +168,19 @@ while True:
             if target_priceE <= current_priceE and ma5E <= current_priceE and ma20E <= current_priceE and ma30E <= current_priceE:
 
                 if btc > 0.001:
-                    if target_percentE  <= 0.02:
+                    if target_percentE  <= 2:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.999))
-                    elif 0.02 < target_percentE:
+                    elif 2 < target_percentE:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(2/target_percentE))                  
 
 
                 if btc < 0.001:
-                    if target_percentE  <= 0.02:
+                    if target_percentE  <= 2:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.499))
-                    elif 0.02 < target_percentE:
+                    elif 2 < target_percentE:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE)) 
         else:
