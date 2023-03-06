@@ -63,11 +63,11 @@ def get_ma5E(ticker):
     ma5E = df['close'].rolling(5).mean().iloc[-2]
     return ma5E    
 
-def get_ma40(ticker):
-    """40일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=41)
-    ma40 = df['close'].rolling(40).mean().iloc[-2]
-    return ma40 
+def get_ma30(ticker):
+    """30일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
+    ma30 = df['close'].rolling(30).mean().iloc[-2]
+    return ma30 
 
 def get_ma20E(ticker):
     """20일 이동 평균선 조회"""
@@ -75,18 +75,20 @@ def get_ma20E(ticker):
     ma20E = df['close'].rolling(20).mean().iloc[-2]
     return ma20E    
 
-def get_ma30(ticker):
-    """30일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
-    ma30 = df['close'].rolling(30).mean().iloc[-2]
-    return ma30   
+def get_ma40(ticker):
+    """40일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=41)
+    ma40 = df['close'].rolling(40).mean().iloc[-2]
+    return ma40   
 
 def get_ma30E(ticker):
     """30일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
     ma30E = df['close'].rolling(30).mean().iloc[-2]
-    return ma30E         
-    
+    return ma30E
+      
+
+
 
 def get_balance(ticker):
     """잔고 조회"""
@@ -122,9 +124,10 @@ while True:
         current_price = get_current_price("KRW-BTC")
         target_price = get_target_price("KRW-BTC", 0.4)
         ma5 = get_ma5("KRW-BTC")
-        ma40 = get_ma40("KRW-BTC")
-        ma30 = get_ma30("KRW-BTC")        
+        ma30 = get_ma30("KRW-BTC")
+        ma40 = get_ma40("KRW-BTC")        
         target_percent = get_target_percent("KRW-BTC")*100 
+
 
         open_priceE = get_open_priceE("KRW-ETH")
         current_priceE = get_current_priceE("KRW-ETH")
@@ -133,14 +136,15 @@ while True:
         ma20E = get_ma20E("KRW-ETH")
         ma30E = get_ma30E("KRW-ETH")        
         target_percentE = get_target_percentE("KRW-ETH")*100 
-        
+
+
         krw = get_balance("KRW")
         btc = get_balance("BTC")
         eth = get_balance("ETH")
 
         if start_time < now < end_time or open_price*0.996 > current_price :
 
-            if target_price <= current_price and ma5 <= current_price and ma40 <= current_price and ma30 <= current_price:
+            if target_price <= current_price and ma5 <= current_price and ma30 <= current_price and ma40 <= current_price:
 
                 if eth > 0.01:
                     if target_percent  <= 2:
@@ -158,13 +162,13 @@ while True:
                     elif 2 < target_percent:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent)) 
-        else:
+        else:            
             if btc > 0.0005:
                 sell_result = upbit.sell_market_order("KRW-BTC", btc)
 
         if start_time < now < end_time or open_priceE*0.996 > current_priceE :
 
-            if target_priceE <= current_priceE and ma5E <= current_priceE and ma20E <= current_priceE and ma30E <= current_priceE:
+            if target_priceE <= current_priceE and ma5E <= current_priceE and ma20E <= current_priceE :
 
                 if btc > 0.001:
                     if target_percentE  <= 2:
@@ -182,15 +186,15 @@ while True:
                     elif 2 < target_percentE:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE)) 
-        else:
+        else:            
             if eth > 0.005:
                 sell_result = upbit.sell_market_order("KRW-ETH", eth)
 
 
-        time.sleep(5)
+        time.sleep(10)
     except Exception as e:
         print(e)
-        time.sleep(1)
+        time.sleep(5)
 
 
 

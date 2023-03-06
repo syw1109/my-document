@@ -2,8 +2,8 @@ import time
 import pyupbit
 import datetime
 
-access = "6c79iZHEnksdIqs8oetJDeTxIxzmd1YGuPMuJpBg"
-secret = "P5JIcd9ju5uM4tFyLqIn9dJFnNEEXLAxxRx2XaWX"
+access = "AUxribSOSKLzHl4WOM8SYCdx6fCiQB9rlfyxh2oU"
+secret = "8BeMmarN0EgF1QoUBPLK9dxKW8PVoDFd8M6ZLxeU"
 
 def get_target_price(ticker, k):
     """변동성 돌파 전략으로 매수 목표가 조회"""
@@ -63,11 +63,11 @@ def get_ma5E(ticker):
     ma5E = df['close'].rolling(5).mean().iloc[-2]
     return ma5E    
 
-def get_ma40(ticker):
-    """40일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=41)
-    ma40 = df['close'].rolling(40).mean().iloc[-2]
-    return ma40 
+def get_ma20(ticker):
+    """20일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=21)
+    ma20 = df['close'].rolling(20).mean().iloc[-2]
+    return ma20 
 
 def get_ma20E(ticker):
     """20일 이동 평균선 조회"""
@@ -120,15 +120,15 @@ while True:
 
         open_price = get_open_price("KRW-BTC")
         current_price = get_current_price("KRW-BTC")
-        target_price = get_target_price("KRW-BTC", 0.4)
+        target_price = get_target_price("KRW-BTC", 0.3)
         ma5 = get_ma5("KRW-BTC")
-        ma40 = get_ma40("KRW-BTC")
+        ma20 = get_ma20("KRW-BTC")
         ma30 = get_ma30("KRW-BTC")        
         target_percent = get_target_percent("KRW-BTC")*100 
 
         open_priceE = get_open_priceE("KRW-ETH")
         current_priceE = get_current_priceE("KRW-ETH")
-        target_priceE = get_target_priceE("KRW-ETH", 0.4)
+        target_priceE = get_target_priceE("KRW-ETH", 0.3)
         ma5E = get_ma5E("KRW-ETH")
         ma20E = get_ma20E("KRW-ETH")
         ma30E = get_ma30E("KRW-ETH")        
@@ -140,7 +140,7 @@ while True:
 
         if start_time < now < end_time or open_price*0.996 > current_price :
 
-            if target_price <= current_price and ma5 <= current_price and ma40 <= current_price and ma30 <= current_price:
+            if target_price <= current_price and ma5 <= current_price and ma20 <= current_price and ma30 <= current_price:
 
                 if eth > 0.01:
                     if target_percent  <= 2:
@@ -159,6 +159,7 @@ while True:
                         if btc < 0.001:
                             buy_result = upbit.buy_market_order("KRW-BTC", krw*(1/target_percent)) 
         else:
+            btc = get_balance("BTC")
             if btc > 0.0005:
                 sell_result = upbit.sell_market_order("KRW-BTC", btc)
 
@@ -183,6 +184,7 @@ while True:
                         if eth < 0.001:
                             buy_result = upbit.buy_market_order("KRW-ETH", krw*(1/target_percentE)) 
         else:
+            eth = get_balance("ETH")
             if eth > 0.005:
                 sell_result = upbit.sell_market_order("KRW-ETH", eth)
 
