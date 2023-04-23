@@ -138,7 +138,7 @@ while True:
         btc = get_balance("BTC")
         eth = get_balance("ETH")
 
-        if start_time < now < end_time or open_price*0.996 > current_price :
+        if start_time < now < end_time and open_price*0.965 < current_price :
 
             if target_price <= current_price and ma5 <= current_price and ma40 <= current_price and ma30 <= current_price:
 
@@ -162,7 +162,7 @@ while True:
             if btc > 0.0005:
                 sell_result = upbit.sell_market_order("KRW-BTC", btc)
 
-        if start_time < now < end_time or open_priceE*0.996 > current_priceE :
+        if start_time < now < end_time and open_priceE*0.965 < current_priceE :
 
             if target_priceE <= current_priceE and ma5E <= current_priceE and ma20E <= current_priceE and ma30E <= current_priceE:
 
@@ -190,7 +190,7 @@ while True:
         time.sleep(5)
     except Exception as e:
         print(e)
-        time.sleep(1)
+        time.sleep(5)
 
 
 
