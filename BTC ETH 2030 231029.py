@@ -101,7 +101,7 @@ while True:
     try:
         now = datetime.datetime.now()
         start_time = get_start_time("KRW-BTC")
-        end_time = start_time + datetime.timedelta(hours=24) - datetime.timedelta(minutes=2)
+        end_time = start_time + datetime.timedelta(minutes=2)
 
         open_price = get_open_price("KRW-BTC")
         low_price = get_low_price("KRW-BTC")
@@ -121,41 +121,84 @@ while True:
         btc = get_balance("BTC")
         eth = get_balance("ETH")
 
-        if low_price > ma20 and low_price > ma30 and open_price > ma20 and open_price > ma30:       
 
-            if eth < 0.01:
-                if btc < 0.0005:
-                    buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.4))
+        if open_price < ma20*1.01 or open_price < ma30*1.01:
+            if low_price > ma20*0.99 and low_price > ma30*0.99 and open_price > ma20 and open_price > ma30:  
+                if end_time < now :
+                    if eth < 0.01:
+                        if btc < 0.0005:
+
+                            buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.44))
                          
-            if eth > 0.01:
-                if btc < 0.0005:
-                    buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.999))
+                    if eth > 0.01:
+                        if btc < 0.0005:
+ 
+                            buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.999))
 
-        else:
-            if btc > 0.0005:
-                sell_result = upbit.sell_market_order("KRW-BTC", btc)
+            else:
+                if btc > 0.0005:
+                    sell_result = upbit.sell_market_order("KRW-BTC", btc)                            
 
+        if open_price > ma20*1.01 and open_price > ma30*1.01:
+            if low_price > ma20 and low_price > ma30 and open_price > ma20 and open_price > ma30:  
+                if end_time < now :
+                    if eth < 0.01:
+                        if btc < 0.0005:
 
-        if low_priceE > ma20E and low_priceE > ma30E and open_priceE > ma20E and open_priceE > ma30E:
-
-            if btc < 0.0005:
-                if eth < 0.01:
-                    buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.599))
+                            buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.44))
                          
-            if btc > 0.0005:
-                if eth < 0.01:
-                    buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.999))
+                    if eth > 0.01:
+                        if btc < 0.0005:
+ 
+                            buy_result = upbit.buy_market_order("KRW-BTC", krw*(0.999))                            
 
-        else:
-            if eth > 0.01:
-                sell_result = upbit.sell_market_order("KRW-ETH", eth)        
+            else:
+                if btc > 0.0005:
+                    sell_result = upbit.sell_market_order("KRW-BTC", btc)
+
+
+        if open_priceE < ma20E*1.02 or open_priceE < ma30E*1.02:
+
+            if low_priceE > ma20E*0.98 and low_priceE > ma30E*0.98 and open_priceE > ma20E and open_priceE > ma30E:
+                if end_time < now :
+
+                    if btc < 0.0005:
+                        if eth < 0.01:
+                    
+                            buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.559))
+                         
+                    if btc > 0.0005:
+                        if eth < 0.01:
+                   
+                            buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.999))
+            else:
+                if eth > 0.01:
+                    sell_result = upbit.sell_market_order("KRW-ETH", eth)                             
+
+        if open_priceE > ma20E*1.02 and open_priceE > ma30E*1.02:
+
+            if low_priceE > ma20E and low_priceE > ma30E and open_priceE > ma20E and open_priceE > ma30E:
+                if end_time < now :
+
+                    if btc < 0.0005:
+                        if eth < 0.01:
+                    
+                            buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.559))
+                         
+                    if btc > 0.0005:
+                        if eth < 0.01:                    
+                            buy_result = upbit.buy_market_order("KRW-ETH", krw*(0.999))
+
+            else:
+                if eth > 0.01:
+                    sell_result = upbit.sell_market_order("KRW-ETH", eth)        
 
 
 
-        time.sleep(5)
+        time.sleep(10)
     except Exception as e:
         print(e)
-        time.sleep(5)
+        time.sleep(10)
 
 
 
