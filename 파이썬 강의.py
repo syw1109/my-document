@@ -37,7 +37,7 @@ print("hello, world") # 화면에 hello, world를 출력하는 코드
 print("world")
 
 # 특정 행에 대하여 주석으로 처리하는 방법: CTRL + /
-#                                              ^--- 물음표 키에 있습니다.
+#                                              ^--- 물음표 키에 있습니다. * 한/영키 눌러져 있어야함
 print("apple")
 # print("banana")
 print("cherry")
