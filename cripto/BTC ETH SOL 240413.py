@@ -52,18 +52,18 @@ def get_start_time(ticker):
     start_time = df.index[0]
     return start_time
 
+# def get_ma20(ticker):
+#     """20일 이동 평균선 조회"""
+#     df = pyupbit.get_ohlcv(ticker, interval="day", count=22)
+#     ma20 = df['close'].rolling(20).mean().iloc[-2]
+#     return ma20 
+
 def get_ma20(ticker):
     """20일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=21)
-    ma20 = df['close'].rolling(20).mean().iloc[-2]
+    df['hykin'] = (df['high'] + df['low']+df['open']+df['close'])/4
+    ma20 = df['hykin'].rolling(20).mean().iloc[-2]
     return ma20 
-
-# def get_ma20(ticker):
-#     """20일 이동 평균선 조회"""
-#     df = pyupbit.get_ohlcv(ticker, interval="day", count=21)
-#     df['hykin'] = (df['high'] + df['low']+df['open']+df['close'])/4
-#     ma20 = df['hykin'].rolling(20).mean().iloc[-2]
-#     return ma20 
 
 
 def get_ma20E(ticker):
@@ -162,9 +162,9 @@ while True:
         eth = get_balance("ETH")
         sol = get_balance("SOL")
         
-        print(btc)
-        print(sol)
-        print(eth)
+        print(ma20E)
+        print(ma20)
+        print(ma30)
         
         
         open_priceS = get_open_priceS("KRW-SOL")
@@ -173,6 +173,7 @@ while True:
         ma16S = get_ma16S("KRW-SOL")
         ma44S = get_ma44S("KRW-SOL")         
 
+        
         
 #btc1
         if open_price < ma20*1.02 or open_price < ma30*1.02:
@@ -353,10 +354,10 @@ while True:
                     sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
 
 
-        time.sleep(5)
+        time.sleep(15)
     except Exception as e:
         print(e)
-        time.sleep(5)
+        time.sleep(10)
 
 
 
