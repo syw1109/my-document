@@ -293,8 +293,8 @@ while True:
 
 #sol1
         if open_priceS < ma16S*1.07 or open_priceS < ma44S*1.07:
-            # if low_priceS > ma16S*0.98 and low_priceS > ma44S*0.98 and open_priceS > ma16S and open_priceS > ma44S:
-            if low_priceS < ma16S*0.98 and low_priceS < ma44S*0.98 and open_priceS < ma16S and open_priceS < ma44S:
+            if low_priceS > ma16S*0.98 and low_priceS > ma44S*0.98 and open_priceS > ma16S and open_priceS > ma44S:
+            # if low_priceS < ma16S*0.98 and low_priceS < ma44S*0.98 and open_priceS < ma16S and open_priceS < ma44S:
                 if end_time < now :
 
                     if eth < 0.1 and btc <0.001:
@@ -353,10 +353,10 @@ while True:
                     sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
 
 
-        time.sleep(1)
+        time.sleep(5)
     except Exception as e:
         print(e)
-        time.sleep(1)
+        time.sleep(5)
 
 
 

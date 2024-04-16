@@ -5,8 +5,8 @@ import datetime
 
 #231207 ma20 *0.997 이상이면 사지는 조건 추가
 #240322 SOL추가 추가
-access = "nzLOjgY3de7Ub5LEl5xtvIpcqAVls2I2CSnQ5JlH"
-secret = "gv8DMa2PCuMvpfIEpuvo7dhnhzSU8Pah4QYWcjMO"
+access = "VjbtLbzbFoAVeILkHwCC4PFc5l8lcfQJghzBVBmD"
+secret = "gL8xagr10FdayU7dWjtI5XZ1pwratIbe9xjy9Jc9"
 
 #시작가가(어제의 종가) ma20, ma30 보다 높은지 확인하기 위함 [0]은 어제종가=오늘 시가 
 def get_open_price(ticker):
@@ -64,18 +64,7 @@ def get_ma30E(ticker):
     df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
     ma30E = df['close'].rolling(30).mean().iloc[-2]
     return ma30E         
-
-def get_ma200(ticker):
-    """200일 이동 평균선 조회 test 용"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=201)
-    ma200 = df['close'].rolling(20).mean().iloc[-2]
-    return ma200   
-
-def get_ma200E(ticker):
-    """200일 이동 평균선 조회 test 용"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=201)
-    ma200E = df['close'].rolling(200).mean().iloc[-2]
-    return ma200E      
+     
 
 def get_balance(ticker):
     """잔고 조회"""
@@ -113,7 +102,7 @@ while True:
         current_price = get_current_price("KRW-BTC")
         ma20 = get_ma20("KRW-BTC")
         ma30 = get_ma30("KRW-BTC")        
-        ma200 = get_ma200("KRW-BTC") 
+
 
 
         open_priceE = get_open_priceE("KRW-ETH")
@@ -121,13 +110,13 @@ while True:
         current_priceE = get_current_priceE("KRW-ETH")
         ma20E = get_ma20E("KRW-ETH")
         ma30E = get_ma30E("KRW-ETH")        
-        ma200E = get_ma200E("KRW-ETH") 
-        
-        print(ma200E)
+
 
         krw = get_balance("KRW")
         btc = get_balance("BTC")
         eth = get_balance("ETH")
+        
+        print(eth)
         
         
 
