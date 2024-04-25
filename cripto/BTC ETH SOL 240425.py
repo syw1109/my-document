@@ -5,6 +5,7 @@ import datetime
 
 #231207 ma20 *0.997 이상이면 사지는 조건 추가
 #240322 SOL추가 추가
+#240426 비트코인 하이킨+31,45  솔라나 High 기준 
 access = "VjbtLbzbFoAVeILkHwCC4PFc5l8lcfQJghzBVBmD"
 secret = "gL8xagr10FdayU7dWjtI5XZ1pwratIbe9xjy9Jc9"
 
@@ -58,12 +59,12 @@ def get_start_time(ticker):
 #     ma20 = df['close'].rolling(20).mean().iloc[-2]
 #     return ma20 
 
-def get_ma20(ticker):
-    """20일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=21)
+def get_ma31(ticker):
+    """31일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=32)
     df['hykin'] = (df['high'] + df['low']+df['open']+df['close'])/4
-    ma20 = df['hykin'].rolling(20).mean().iloc[-2]
-    return ma20 
+    ma31 = df['hykin'].rolling(31).mean().iloc[-2]
+    return ma31
 
 
 def get_ma20E(ticker):
@@ -75,7 +76,7 @@ def get_ma20E(ticker):
 def get_ma16S(ticker):
     """16일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=17)
-    ma16S = df['close'].rolling(16).mean().iloc[-2]
+    ma16S = df['high'].rolling(16).mean().iloc[-2]
     return ma16S   
 
 # def get_ma30(ticker):
@@ -84,12 +85,12 @@ def get_ma16S(ticker):
 #     ma30 = df['close'].rolling(30).mean().iloc[-2]
 #     return ma30 
 
-def get_ma30(ticker):
-    """30일 이동 평균선 조회"""
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
+def get_ma45(ticker):
+    """45일 이동 평균선 조회"""
+    df = pyupbit.get_ohlcv(ticker, interval="day", count=46)
     df['hykin'] = (df['high'] + df['low']+df['open']+df['close'])/4
-    ma30 = df['hykin'].rolling(30).mean().iloc[-2]
-    return ma30   
+    ma45 = df['hykin'].rolling(45).mean().iloc[-2]
+    return ma45   
 
 def get_ma30E(ticker):
     """30일 이동 평균선 조회"""
@@ -100,7 +101,7 @@ def get_ma30E(ticker):
 def get_ma44S(ticker):
     """44일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=45)
-    ma44S = df['close'].rolling(44).mean().iloc[-2]
+    ma44S = df['high'].rolling(44).mean().iloc[-2]
     return ma44S         
 
 #---------------------------------------------------     
@@ -137,14 +138,14 @@ while True:
     try:
         now = datetime.datetime.now()
         start_time = get_start_time("KRW-BTC")
-        end_time = start_time + datetime.timedelta(minutes=1)
+        end_time = start_time + datetime.timedelta(minutes=0.5)
         end_time1 = start_time + datetime.timedelta(minutes=1)
 
         open_price = get_open_price("KRW-BTC")
         low_price = get_low_price("KRW-BTC")
         current_price = get_current_price("KRW-BTC")
-        ma20 = get_ma20("KRW-BTC")
-        ma30 = get_ma30("KRW-BTC")        
+        ma31 = get_ma31("KRW-BTC")
+        ma45 = get_ma45("KRW-BTC")        
 
 
         open_priceE = get_open_priceE("KRW-ETH")
@@ -163,7 +164,7 @@ while True:
         sol = get_balance("SOL")
         print(krw)
         print(btc)
-        print(eth)        
+        print(eth)         
 
         
         
@@ -173,11 +174,12 @@ while True:
         ma16S = get_ma16S("KRW-SOL")
         ma44S = get_ma44S("KRW-SOL")         
 
+
         
         
 #btc1
-        if open_price < ma20*1.02 or open_price < ma30*1.02:
-            if low_price > ma20*0.98 and low_price > ma30*0.98 and open_price > ma20*0.997 and open_price > ma30:  
+        if open_price < ma31*1.02 or open_price < ma45*1.02:
+            if low_price > ma31*0.98 and low_price > ma45*0.98 and open_price > ma31*0.997 and open_price > ma45:  
                 if end_time1 < now :
                     if eth < 0.01 and sol<0.05:
                         if btc < 0.0005:
@@ -205,8 +207,8 @@ while True:
                     
                                               
 # btc2
-        if open_price > ma20*1.02 and open_price > ma30*1.02:
-            if low_price > ma20 and low_price > ma30 and open_price > ma20*0.997 and open_price > ma30:  
+        if open_price > ma31*1.02 and open_price > ma45*1.02:
+            if low_price > ma31 and low_price > ma45 and open_price > ma31*0.997 and open_price > ma45:  
                 if end_time < now :
                     if eth < 0.01 and sol<0.05:
                         if btc < 0.0005:
