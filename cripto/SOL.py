@@ -104,64 +104,64 @@ while True:
 
 
 #sol1
-        # if open_priceS < ma16S*1.07 or open_priceS < ma44S*1.07:
-        #     if low_priceS > ma16S*0.98 and low_priceS > ma44S*0.98 and open_priceS > ma16S and open_priceS > ma44S:
-        #         if end_time < now :
+        if open_priceS < ma16S*1.07 or open_priceS < ma44S*1.07:
+            if low_priceS > ma16S*0.98 and low_priceS > ma44S*0.98 and open_priceS > ma16S and open_priceS > ma44S:
+                if end_time < now :
 
-        #             if eth < 0.1 and btc <0.001:
-        #                 if sol < 0.1:
+                    if eth < 0.1 and btc <0.001:
+                        if sol < 0.1:
 
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.3))
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.3))
                          
-        #             if eth > 0.1 and btc < 0.001:
-        #                 if sol < 0.1:
+                    if eth > 0.1 and btc < 0.001:
+                        if sol < 0.1:
  
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))
                             
-        #             if eth < 0.1 and btc > 0.001:
-        #                 if sol < 0.1:
+                    if eth < 0.1 and btc > 0.001:
+                        if sol < 0.1:
  
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))                            
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))                            
                             
-        #             if eth > 0.1 and btc > 0.001:
-        #                 if sol < 0.1:
+                    if eth > 0.1 and btc > 0.001:
+                        if sol < 0.1:
 
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.999)) 
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.999)) 
 
-        #     else:
-        #         if sol > 0.1:
-        #             sell_result = upbit.sell_market_order("KRW-SOL", sol)   
+            else:
+                if sol > 0.1:
+                    sell_result = upbit.sell_market_order("KRW-SOL", sol)   
                     
 
 #sol2
-        # if open_priceS > ma16S*1.07 and open_priceS > ma44S*1.07:
+        if open_priceS > ma16S*1.07 and open_priceS > ma44S*1.07:
 
-        #     if low_priceS > ma16S and low_priceS > ma44S and open_priceS > ma16S and open_priceS > ma44S:
-        #         if end_time < now :
+            if low_priceS > ma16S and low_priceS > ma44S and open_priceS > ma16S and open_priceS > ma44S:
+                if end_time < now :
 
-        #             if eth < 0.1 and btc <0.001:
-        #                 if sol < 0.1:
+                    if eth < 0.1 and btc <0.001:
+                        if sol < 0.1:
 
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.3))
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.3))
                          
-        #             if eth > 0.1 and btc < 0.001:
-        #                 if sol < 0.1:
+                    if eth > 0.1 and btc < 0.001:
+                        if sol < 0.1:
  
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))
                             
-        #             if eth < 0.1 and btc > 0.001:
-        #                 if sol < 0.1:
+                    if eth < 0.1 and btc > 0.001:
+                        if sol < 0.1:
  
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))                            
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.43))                            
                             
-        #             if eth > 0.1 and btc > 0.001:
-        #                 if sol < 0.1:
+                    if eth > 0.1 and btc > 0.001:
+                        if sol < 0.1:
 
-        #                     buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.999)) 
+                            buy_result = upbit.buy_market_order("KRW-SOL", krw*(0.999)) 
 
-        #     else:
-        #         if sol > 0.1:
-        #             sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
+            else:
+                if sol > 0.1:
+                    sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
 
 
         time.sleep(1)

@@ -26,4 +26,4 @@ df['dd'] = (df['hpr'].cummax() - df['hpr']) / df['hpr'].cummax() * 100
 print("MDD(%): ", df['dd'].max())
 
 #엑셀로 출력
-df.to_excel("btc.xlsx")
+df.to_excel("us-btc.xlsx")

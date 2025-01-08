@@ -22,7 +22,7 @@ def btncmd():
     # 항목 확인 (시작 idx, 끝 idx)
     # print("1번째부터 3번째까지의 항목 : ", listbox.get(0, 2))  # 시작인덱스 0 번쨰줄  ~ 끝 인덱스 2 번째줄
 
-    # 선택된 항목 확인 (위치로 반환 (ex) (1, 2, 3) )
+    # 선택된 항목의 인덱스 확인 (위치로 반환 (ex) (1, 2, 3) ) 
     print("선택된 항목 : ", listbox.curselection())
 
 btn = Button(root, text="클릭", command=btncmd)

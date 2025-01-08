@@ -5,7 +5,7 @@ import datetime
 
 #231207 ma20 *0.997 이상이면 사지는 조건 추가
 #240322 SOL추가 추가
-#240426 비트코인 하이킨+31,45  솔라나 High 기준 
+#240426 비트코인 하이킨+31,45  솔라나 High 기준  ma16 high가 좋고, maa44 close 가 좋더라
 access = "VjbtLbzbFoAVeILkHwCC4PFc5l8lcfQJghzBVBmD"
 secret = "gL8xagr10FdayU7dWjtI5XZ1pwratIbe9xjy9Jc9"
 
@@ -101,7 +101,7 @@ def get_ma30E(ticker):
 def get_ma44S(ticker):
     """44일 이동 평균선 조회"""
     df = pyupbit.get_ohlcv(ticker, interval="day", count=45)
-    ma44S = df['high'].rolling(44).mean().iloc[-2]
+    ma44S = df['close'].rolling(44).mean().iloc[-2]
     return ma44S         
 
 #---------------------------------------------------     
@@ -139,7 +139,8 @@ while True:
         now = datetime.datetime.now()
         start_time = get_start_time("KRW-BTC")
         end_time = start_time + datetime.timedelta(minutes=0.5)
-        end_time1 = start_time + datetime.timedelta(minutes=1)
+        end_time1 = start_time + datetime.timedelta(minutes=0.7)
+        end_time2 = start_time + datetime.timedelta(minutes=1)
 
         open_price = get_open_price("KRW-BTC")
         low_price = get_low_price("KRW-BTC")
@@ -162,9 +163,7 @@ while True:
         btc = get_balance("BTC")
         eth = get_balance("ETH")
         sol = get_balance("SOL")
-        print(krw)
-        print(btc)
-        print(eth)         
+      
 
         
         
@@ -180,7 +179,7 @@ while True:
 #btc1
         if open_price < ma31*1.02 or open_price < ma45*1.02:
             if low_price > ma31*0.98 and low_price > ma45*0.98 and open_price > ma31*0.997 and open_price > ma45:  
-                if end_time1 < now :
+                if end_time2 < now :
                     if eth < 0.01 and sol<0.05:
                         if btc < 0.0005:
 
@@ -209,7 +208,7 @@ while True:
 # btc2
         if open_price > ma31*1.02 and open_price > ma45*1.02:
             if low_price > ma31 and low_price > ma45 and open_price > ma31*0.997 and open_price > ma45:  
-                if end_time < now :
+                if end_time2 < now :
                     if eth < 0.01 and sol<0.05:
                         if btc < 0.0005:
 
@@ -238,7 +237,7 @@ while True:
         if open_priceE < ma20E*1.025 or open_priceE < ma30E*1.025:
 
             if low_priceE > ma20E*0.975 and low_priceE > ma30E*0.975 and open_priceE > ma20E*0.997 and open_priceE > ma30E:
-                if end_time < now :
+                if end_time1 < now :
 
                     if btc < 0.001 and sol<0.05:
                         if eth < 0.001:
@@ -267,7 +266,7 @@ while True:
         if open_priceE > ma20E*1.025 and open_priceE > ma30E*1.025:
 
             if low_priceE > ma20E and low_priceE > ma30E and open_priceE > ma20E*0.997 and open_priceE > ma30E:
-                if end_time < now :
+                if end_time1 < now :
 
                     if btc < 0.001 and sol<0.05:
                         if eth < 0.001:
@@ -356,7 +355,7 @@ while True:
                     sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
 
 
-        time.sleep(10)
+        time.sleep(20)
     except Exception as e:
         print(e)
         time.sleep(10)

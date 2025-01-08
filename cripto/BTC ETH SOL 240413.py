@@ -161,9 +161,7 @@ while True:
         btc = get_balance("BTC")
         eth = get_balance("ETH")
         sol = get_balance("SOL")
-        print(krw)
-        print(btc)
-        print(eth)        
+       
 
         
         

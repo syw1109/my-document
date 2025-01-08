@@ -1,3 +1,5 @@
+# text pack : 글자 입력 텍스트 위젯
+
 from tkinter import *
 
 root = Tk()

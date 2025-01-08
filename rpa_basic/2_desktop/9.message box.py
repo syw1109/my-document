@@ -12,3 +12,7 @@ import pyautogui
 # print(result)
 result = pyautogui.password("암호를 입력하세요") # 암호 입력  ****로 표시가 된다
 print(result)
+
+#------------------------------------------------------
+#33 **사이트 Welcome to pyautogui 사이트 방문
+# 추가 공부 가능 샘플,설명

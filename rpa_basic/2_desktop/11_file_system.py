@@ -107,7 +107,7 @@ import os
 # os.mkdir("c:/cripto/rpa_basic/nenew") # 절대 경로 기준으로 폴더 생성
 
 # os.mkdir("new_folders/a/b/c") # 실패 : 하위 폴더를 가지는 폴더 생성 시도
-os.makedirs("new_folders/a/b/c") # 성공 : 하위 폴더를 가지는 폴더 생성
+# os.makedirs("new_folders/a/b/c") # 성공 os.makedirs : 하위 폴더를 가지는 폴더 생성
 
 # 폴더명 변경하기
 #os.rename("new_folder", "new_folder_rename")

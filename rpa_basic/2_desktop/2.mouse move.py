@@ -9,13 +9,13 @@ import pyautogui
 #pyautogui.moveTo(300, 300, duration=0.25)
 
 # "상대 좌표"로 마우스 이동 (현재 커서가 있는 위치로부터)
-pyautogui.moveTo(100, 100, duration=0.25)
-print(pyautogui.position()) # Point(x, y)
-pyautogui.move(100, 100, duration=0.25) # 100, 100 기준으로 +100, +100 -> 200, 200
-print(pyautogui.position()) # Point(x, y)
-pyautogui.move(100, 100, duration=0.25) # 200, 200 기준으로 -> 300, 300
-print(pyautogui.position()) # Point(x, y)
+# pyautogui.moveTo(100, 100, duration=0.25)
+# print(pyautogui.position()) # Point(x, y)
+# pyautogui.move(100, 100, duration=0.25) # 100, 100 기준으로 +100, +100 -> 200, 200
+# print(pyautogui.position()) # Point(x, y)
+# pyautogui.move(100, 100, duration=0.25) # 200, 200 기준으로 -> 300, 300
+# print(pyautogui.position()) # Point(x, y)
 
-p = pyautogui.position()
-print(p[0], p[1]) # x, y  위아래 좌표 똑같이 나온다
-print(p.x, p.y) # x, y
+# p = pyautogui.position()
+# print(p[0], p[1]) # x, y  위아래 좌표 똑같이 나온다
+# print(p.x, p.y) # x, y

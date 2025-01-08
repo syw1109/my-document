@@ -1,4 +1,6 @@
-from tkinter import * # label 글자 이미지를 보여준다
+# label 글자나 이미지를 보여준다  text
+
+from tkinter import * 
 
 root = Tk()
 root.title("Nado GUI")
@@ -18,7 +20,7 @@ def change():
     photo2 = PhotoImage(file="gui_basic/img2.png")
     label2.config(image=photo2)
 
-btn = Button(root, text="클릭", command=change)
+btn = Button(root, text="클릭", command=change) 
 btn.pack()
 
 root.mainloop()

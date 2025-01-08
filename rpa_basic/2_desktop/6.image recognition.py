@@ -103,7 +103,7 @@ file_menu_notepad = pyautogui.locateOnScreen("file_menu_notepad.png")
 
 # 2. 일정 시간동안 기다리기 (TimeOut) # 5초안에 안나오면 프로그램 종료
 import time
-# import sys
+import sys
 
 # timeout = 10 # 10초 대기
 # start = time.time() # 시작 시간 설정
@@ -121,8 +121,9 @@ import time
 
 #오류 문구 발생 
 # NameError: name 'time' is not defined -> time 모듈이 없어서 그런것
+# NameError: name 'sys' is not defined -> sys 모듈이 없어서 그런것
 # import time 을 주석처리해서 그런것. 
-
+# import sys 을 주석처리 해제
 
 
 def find_target(img_file, timeout=30): # find 타겟 함수
