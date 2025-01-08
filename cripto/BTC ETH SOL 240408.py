@@ -6,8 +6,8 @@ import datetime
 #231207 ma20 *0.997 이상이면 사지는 조건 추가
 #240322 SOL추가 추가
 #240426 비트코인 하이킨+31,45  솔라나 High 기준  ma16 high가 좋고, maa44 close 가 좋더라
-access = "VjbtLbzbFoAVeILkHwCC4PFc5l8lcfQJghzBVBmD"
-secret = "gL8xagr10FdayU7dWjtI5XZ1pwratIbe9xjy9Jc9"
+access = "BGwwKGFoVeaPOoh6qnWgnQllH8DFSCyzXR2IXVH4"
+secret = "TCDxpnKdCXxTuZaMrUgK5zDICxHessZtjqTvZCRf"
 
 #시작가가(어제의 종가) ma20, ma30 보다 높은지 확인하기 위함 [0]은 어제종가=오늘 시가 
 def get_open_price(ticker):
