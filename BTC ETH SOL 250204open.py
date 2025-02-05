@@ -34,20 +34,20 @@ def get_open_priceS(ticker):
     return open_priceS   
 
 #오늘의 최저가 low가 ma20,30보다 높은지 확인하기 위함  [1] 오늘 저가
-def get_low_price(ticker):
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
-    low_price = df.iloc[1]['low']
-    return low_price  
+# def get_low_price(ticker):
+#     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+#     low_price = df.iloc[1]['low']
+#     return low_price  
 
-def get_low_priceE(ticker):
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
-    low_priceE = df.iloc[1]['low']
-    return low_priceE   
+# def get_low_priceE(ticker):
+#     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+#     low_priceE = df.iloc[1]['low']
+#     return low_priceE   
 
-def get_low_priceS(ticker):
-    df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
-    low_priceS = df.iloc[1]['low']
-    return low_priceS  
+# def get_low_priceS(ticker):
+#     df = pyupbit.get_ohlcv(ticker, interval="day", count=2)
+#     low_priceS = df.iloc[1]['low']
+#     return low_priceS  
 
    
 
@@ -82,11 +82,6 @@ def get_ma16S(ticker):
     ma16S = df['high'].rolling(16).mean().iloc[-2]
     return ma16S   
 
-# def get_ma30(ticker):
-#     """30일 이동 평균선 조회"""
-#     df = pyupbit.get_ohlcv(ticker, interval="day", count=31)
-#     ma30 = df['close'].rolling(30).mean().iloc[-2]
-#     return ma30 
 
 def get_ma45(ticker):
     """45일 이동 평균선 조회"""
@@ -119,17 +114,17 @@ def get_balance(ticker):
                 return 0
     return 0
 
-def get_current_price(ticker):
-    """현재가 조회"""
-    return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]
+# def get_current_price(ticker):
+#     """현재가 조회"""
+#     return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]
 
-def get_current_priceE(ticker):
-    """현재가 조회"""
-    return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]  
+# def get_current_priceE(ticker):
+#     """현재가 조회"""
+#     return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]  
 
-def get_current_priceS(ticker):
-    """현재가 조회"""
-    return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]    
+# def get_current_priceS(ticker):
+#     """현재가 조회"""
+#     return pyupbit.get_orderbook(ticker=ticker)["orderbook_units"][0]["ask_price"]    
 
 # 로그인
 upbit = pyupbit.Upbit(access, secret)
@@ -145,38 +140,32 @@ while True:
         end_time2 = start_time + datetime.timedelta(minutes=0.7)
 
         open_price = get_open_price("KRW-BTC")
-        low_price = get_low_price("KRW-BTC")
-        current_price = get_current_price("KRW-BTC")
+        # low_price = get_low_price("KRW-BTC")
+        # current_price = get_current_price("KRW-BTC")
         ma31 = get_ma31("KRW-BTC")
         ma45 = get_ma45("KRW-BTC")        
 
 
         open_priceE = get_open_priceE("KRW-ETH")
-        low_priceE = get_low_priceE("KRW-ETH")        
-        current_priceE = get_current_priceE("KRW-ETH")
+        # low_priceE = get_low_priceE("KRW-ETH")        
+        # current_priceE = get_current_priceE("KRW-ETH")
         ma20E = get_ma20E("KRW-ETH")
         ma30E = get_ma30E("KRW-ETH")        
         
-           
+        
+        open_priceS = get_open_priceS("KRW-SOL")
+        # low_priceS = get_low_priceS("KRW-SOL")        
+        # current_priceS = get_current_priceS("KRW-SOL")
+        ma16S = get_ma16S("KRW-SOL")
+        ma43S = get_ma43S("KRW-SOL")             
         
       
-
         krw = get_balance("KRW")
         btc = get_balance("BTC")
         eth = get_balance("ETH")
         sol = get_balance("SOL")
       
-
-        
-        
-        open_priceS = get_open_priceS("KRW-SOL")
-        low_priceS = get_low_priceS("KRW-SOL")        
-        current_priceS = get_current_priceS("KRW-SOL")
-        ma16S = get_ma16S("KRW-SOL")
-        ma43S = get_ma43S("KRW-SOL")         
-
-
-        
+ 
         
 #btc1
 

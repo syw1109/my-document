@@ -356,7 +356,7 @@ while True:
                     sell_result = upbit.sell_market_order("KRW-SOL", sol)                                           
 
 
-        time.sleep(20)
+        time.sleep(3)
     except Exception as e:
         print(e)
         time.sleep(10)
