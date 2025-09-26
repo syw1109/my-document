@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 # OHLCV(open, high, low, close, volume) 데이터 가져오기
-df = pyupbit.get_ohlcv("KRW-DOGE", count=5000)
+df = pyupbit.get_ohlcv("KRW-XRP", count=5000)
 
 def calculate_ema(data, period):
     return data.ewm(span=period, adjust=False).mean()
@@ -36,4 +36,4 @@ stoch_rsi_data = calculate_stoch_rsi(df, period=14, smoothK=3, smoothD=3)
 result = pd.concat([df, stoch_rsi_data], axis=1)
 
 # 결과를 엑셀 파일로 저장
-result.to_excel("doge_with_stoch_rsi_ema.xlsx")
+result.to_excel("XRP_with_stoch_rsi_ema.xlsx")
