@@ -171,7 +171,7 @@ while True:
 #btc1
 
         if open_price > ma31 and open_price > ma45:  
-            if end_time2 < now and now < end_time3 :
+            if end_time2 < now < end_time3 :
                 if eth < 0.01 and sol<0.05:
                     if btc < 0.0005:
 
@@ -202,7 +202,7 @@ while True:
 # eth1
 
         if open_priceE > ma20E and open_priceE > ma30E:
-            if end_time1 < now and now < end_time3 :
+            if end_time1 < now < end_time3 :
 
                 if btc < 0.001 and sol<0.05:
                     if eth < 0.001:
@@ -234,7 +234,7 @@ while True:
 #sol1
         if open_priceS > ma16S and open_priceS > ma43S:
 
-            if end_time < now and now < end_time3 :
+            if end_time < now < end_time3 :
 
                 if eth < 0.1 and btc <0.001:
                     if sol < 0.1:
