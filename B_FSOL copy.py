@@ -17,6 +17,8 @@
 # SOL 포지션이 있으면 금요일 종가에 close 하기, 가능하면 토요일 1시간봉 05:00봉 마감 06:00 에 close
 
 # 적용 필요
+# 추세 전략 : MA18 4일 변화 추세 분석 (3일 연속 0.6% 이상 상승/하락 여부) + 
+
 
 import time
 import datetime
@@ -407,3 +409,4 @@ while True:
     except Exception as e:
         print(e)
         time.sleep(5)
+
