@@ -1,4 +1,3 @@
-
 import time
 import datetime
 import ccxt
@@ -303,7 +302,7 @@ def trade_once():
 
 
 # 0.95% 익절룰로 수정
-    tp_price_long = current_price * 1.095
+    tp_price_long = current_price * 1.0095
     tp_price_short = current_price * 0.9905
     
     # 디버그 정보 출력 (확장)
@@ -312,7 +311,9 @@ def trade_once():
     print(f"[YEST] yest_open={upbit_yesterday_open}, y_ma18={yesterday_ma18}, y_ma43={yesterday_ma43}")
     print(f"[TREND4] changes={trend['changes']}, up_3days={trend['up_3days']}, down_3days={trend['down_3days']}")
     print(f"[TREND6] all_up_6days={vol_trend['all_up_6days']}, all_down_6days={vol_trend['all_down_6days']}, high_vol_days={vol_trend['high_vol_days']}")
-
+    now = now_kst()
+    print(now) 
+    
     # 롱 진입 조건
     if current_price <= sat_close * 0.99:
         # 기존 3일 연속 하락 금지        
@@ -364,28 +365,32 @@ def trade_once():
     else:
         print("진입 조건 없음")
         
-# 메인 루프 제어 변수
+# 메인 루프 제어 변수 (그대로 유지)
 last_run_date = None
 
-# 무한 루프: 매일 09:00에 trade_once() 실행
+# 무한 루프: 매 1초마다 조건 확인
 while True:
     try:
         now = now_kst()
 
-        # ★★★ 토요일 06:00 포지션 강제 종료 ★★★
+
+        # ★★★ 토요일 06:00 포지션 강제 종료 (유지)
         if now.weekday() == 5 and now.hour == 6 and now.minute == 0:
             print("=== 토요일 06:00 포지션 종료 ===")
             close_sol_position()
-        
-        # 기존 매매 로직 (09:00)
-        elif now.hour == 9 and now.minute == 0:
-            if last_run_date != now.date():
-                trade_once()
-                last_run_date = now.date()
 
-        time.sleep(1)
+
+        # *******************************************************************
+        # ☆☆☆ 21:33 KST에 그날 한 번만 진입 ☆☆☆
+        if now.hour == 21 and now.minute == 55:
+            if last_run_date != now.date():
+                if not has_sol_position():  # 이 줄은 유지해도 됨 (선택)
+                    trade_once()
+                    last_run_date = now.date()
+
+
+        time.sleep(1)   # 1초마다 스캔 ( 유지 )
 
     except Exception as e:
         print(e)
-        time.sleep(5)
-
+        time.sleep(10)
