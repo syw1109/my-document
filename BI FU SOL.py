@@ -46,6 +46,9 @@ print("autotrade start")
 # 현재 KST 시간 반환
 def now_kst():
     return datetime.datetime.now(KST)
+    
+now = now_kst()
+print(now) 
 
 # 지난 토요일 06:00 바이낸스 SOL/USDT 종가 반환
 def get_last_saturday_6_close():
