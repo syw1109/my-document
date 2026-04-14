@@ -27,9 +27,12 @@ from datetime import timezone, timedelta
 
 # KST 타임존 설정 및 전역 변수
 KST = timezone(timedelta(hours=9))
-SYMBOL = 'SOL/USDT'
-UPBIT_TICKER = 'KRW-SOL'
-MARKET_ID = 'SOLUSDT'
+# 바이낸스 선물 심볼
+SYMBOL = 'BTC/USDT'              # SOL → BTC
+# 업비트 현물 티커
+UPBIT_TICKER = 'KRW-BTC'         # KRW-SOL → KRW-BTC
+# 바이낸스 마켓 ID (마진/포지션 조회용)
+MARKET_ID = 'BTCUSDT'            # SOLUSDT → BTCUSDT
 LEVERAGE = 5
 
 # 바이낸스 선물 거래소 연결
@@ -405,7 +408,7 @@ while True:
 
         # *******************************************************************
         # ☆☆☆ 09:00 KST에 그날 한 번만 진입 ☆☆☆
-        if now.hour == 21 and now.minute == 30:
+        if now.hour == 21 and now.minute == 50:
             if last_run_date != now.date():
                 if not has_sol_position():  # 이 줄은 유지해도 됨 (선택)
                     trade_once()
