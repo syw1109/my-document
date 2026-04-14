@@ -46,6 +46,9 @@ print("autotrade start")
 # 현재 KST 시간 반환
 def now_kst():
     return datetime.datetime.now(KST)
+    
+now = now_kst()
+print(now) 
 
 now = now_kst()
 print(now) 
