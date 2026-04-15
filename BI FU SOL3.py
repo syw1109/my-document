@@ -408,7 +408,7 @@ while True:
 
         # *******************************************************************
         # ☆☆☆ 09:00 KST에 그날 한 번만 진입 ☆☆☆
-        if now.hour == 22 and now.minute == 0:
+        if now.hour == 22 and now.minute == 25:
             if last_run_date != now.date():
                 if not has_sol_position():  # 이 줄은 유지해도 됨 (선택)
                     trade_once()
