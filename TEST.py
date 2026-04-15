@@ -379,23 +379,19 @@ while True:
     try:
         now = now_kst()
 
-
         # ★★★ 토요일 06:00 포지션 강제 종료 (유지)
         if now.weekday() == 5 and now.hour == 6 and now.minute == 0:
             print("=== 토요일 06:00 포지션 종료 ===")
             close_sol_position()
 
+        # =====================================================
+        # ☆☆☆ 22:15 조건 제거: 지금 포지션이 없으면 즉시 매수 ☆☆☆
+        if not has_sol_position():  # 포지션이 없으면 바로 매수
+            trade_once()
+            # 필요하면 그날은 다시 호출 안 하고 싶으면 아래처럼 유지
+            # last_run_date = now.date()  # 1번만 호출하게 하고 싶을 때
 
-        # *******************************************************************
-        # ☆☆☆ 09:00 KST에 그날 한 번만 진입 ☆☆☆
-        if now.hour == 22 and now.minute == 15:
-            if last_run_date != now.date():
-                if not has_sol_position():  # 이 줄은 유지해도 됨 (선택)
-                    trade_once()
-                    last_run_date = now.date()
-
-
-        time.sleep(1)   # 1초마다 스캔 ( 유지 )
+        time.sleep(1)  # 1초마다 스캔 (유지)
 
     except Exception as e:
         print(e)
