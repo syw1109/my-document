@@ -255,16 +255,23 @@ def close_sol_position():
     return False
 
 
-# 메인 거래 로직 (매일 09:00 실행)
+    
+    
+    # 메인 거래 로직 (매일 09:00 실행)
 def trade_once():
     # 마진/레버리지 설정
     set_margin_and_leverage()
 
     now = now_kst()
-    # 금/토 매매 금지
-    if now.weekday() in [4, 5]:
-        print("금요일/토요일은 매매 금지")
+    # 목/금/토 매매 금지 (weekday: 3=목, 4=금, 5=토)
+    if now.weekday() in [3, 4, 5]:
+        print("목요일/금요일/토요일은 매매 금지")
         return
+
+    # # 금/토 매매 금지
+    # if now.weekday() in [4, 5]:
+    #     print("금요일/토요일은 매매 금지")
+    #     return
     
     # 기존 포지션 확인
     if has_sol_position():
@@ -326,9 +333,9 @@ def trade_once():
 #     tp_price_short = current_price * 0.99 if weekday in [2, 3] else sat_close
 
 
-# 0.95% 익절룰로 수정
-    tp_price_long = current_price * 1.0095
-    tp_price_short = current_price * 0.9905
+# 1.05% 익절룰로 수정
+    tp_price_long = current_price * 1.0105
+    tp_price_short = current_price * 0.99
     
     # 디버그 정보 출력 (확장)
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
@@ -414,9 +421,9 @@ while True:
                     last_run_date = now.date()
 
 
-        time.sleep(1)   # 1초마다 스캔 ( 유지 )
+        time.sleep(10)   # 1초마다 스캔 ( 유지 )
 
     except Exception as e:
         print(e)
-        time.sleep(10)
+        time.sleep(15)
 

@@ -6,12 +6,12 @@ import time
 
 
 exchange = ccxt.binance()
-symbol = 'ETH/USDT'
+symbol = 'SOL/USDT'
 timeframe = '1d'  # 1시간봉 → 1일봉으로 변경
 
 
 # 5년 전 타임스탬프(ms)
-five_years_ago = datetime.now() - timedelta(days=365 * 5)
+five_years_ago = datetime.now() - timedelta(days=365 * 10)
 since = int(five_years_ago.timestamp() * 1000)
 
 # 반복 호출로 1일봉 가져오기
@@ -80,7 +80,7 @@ result = pd.concat([df, stoch_rsi_data], axis=1)
 
 
 # 엑셀로 저장
-result.to_excel("ETHUSDT_5years_1D_with_weekday.xlsx")
+result.to_excel("SOLUSDT_5years_1D_with_weekday.xlsx")
 
 
 print("Data shape:", result.shape)
