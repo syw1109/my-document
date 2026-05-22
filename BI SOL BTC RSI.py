@@ -636,7 +636,7 @@ while True:
                         timeframe='15m',
                         tp_long_pct=0.009,
                         tp_short_pct=0.009,
-                        min_volatility=0.003,
+                        min_volatility=0.0023,
                         use_position_check=True
                     )
 
@@ -648,7 +648,7 @@ while True:
                         timeframe='15m',
                         tp_long_pct=0.005,
                         tp_short_pct=0.005,
-                        min_volatility=0.003,
+                        min_volatility=0.0022,
                         use_position_check=True
                     )
 
