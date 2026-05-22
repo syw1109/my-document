@@ -1,28 +1,9 @@
-# 적용 내용
-# 바이낸스 SOL/USDT 선물.
-# 격리(Isolated) 마진.
-# 레버리지 5배.
-# 선물계좌 증거금의 50% 사용.
-# 기존 SOL 포지션이 있으면 거래 안 함.
-
-# 추세 전략 : MA18 4일 변화 추세 분석 (3일 연속 0.6% 이상 상승/하락 여부) 
-# ㄴ 업비트 SOL 18일 MA가 3일 연속 0.6%이상 상승이면 숏 금지.
-# ㄴ 업비트 SOL 18일 MA가 3일 연속 0.6%이상 하락이면 롱 금지.
-# 지난 6일동안 같은 방향이고 변동성 0.4%이상이 5일이상 존재 상승/하락 추세로 보고 각각 숏/롱 진입 금지
-# 현재가와 토요일 기준가 차이가 ±9% 이상이면 거래 금지. -> 위에 추세 전략에 해당이 되어서 빼도 되겠다.
-# 업비트 기준 솔라나 시가가 어제는 43,18 위였는데, 오늘은 43,18 중 하나라도 아래면 롱 깨진 조건이니 롱 진입 금지
-# 업비트 기준 솔라나 시가가 어제는 43,18 모두 위가 아니었는데, 오늘은 43,18 모두 위면 롱 진입 조건으로 숏 진입 금지
-# 일,월,화,수,목 매일 1% TP룰
-# while문으로 매일 9시에 거래 # 금요일/토요일 매매 금지.
-# SOL 포지션이 있으면 금요일 종가에 close 하기, 가능하면 토요일 1시간봉 05:00봉 마감 06:00 에 close
-
-# 적용 필요
-
 import time
 import datetime
 import ccxt
 import pyupbit
 import pandas as pd
+import numpy as np
 from datetime import timezone, timedelta
 
 # KST 타임존 설정 및 전역 변수
@@ -46,6 +27,9 @@ print("autotrade start")
 # 현재 KST 시간 반환
 def now_kst():
     return datetime.datetime.now(KST)
+    
+now = now_kst()
+print(now) 
 
 # 지난 토요일 06:00 바이낸스 SOL/USDT 종가 반환
 def get_last_saturday_6_close():
@@ -227,8 +211,6 @@ def ma18_6day_volatility_trend():
         "last_ma18": last7[-1]
     }
 
-
-
 # SOL 포지션 시장가 강제 종료 (토요일 06:00)
 def close_sol_position():
     """토요일 06:00 SOL 포지션 시장가 강제 종료"""
@@ -250,16 +232,22 @@ def close_sol_position():
     return False
 
 
-# 메인 거래 로직 (매일 09:00 실행)
+    
+    # 메인 거래 로직 (매일 09:00 실행)
 def trade_once():
     # 마진/레버리지 설정
     set_margin_and_leverage()
 
     now = now_kst()
-    # 금/토 매매 금지
-    if now.weekday() in [4, 5]:
-        print("금요일/토요일은 매매 금지")
+    # 목/금/토 매매 금지 (weekday: 3=목, 4=금, 5=토)
+    if now.weekday() in [3, 4, 5]:
+        print("목요일/금요일/토요일은 매매 금지")
         return
+
+    # # 금/토 매매 금지
+    # if now.weekday() in [4, 5]:
+    #     print("금요일/토요일은 매매 금지")
+    #     return
     
     # 기존 포지션 확인
     if has_sol_position():
@@ -321,9 +309,9 @@ def trade_once():
 #     tp_price_short = current_price * 0.99 if weekday in [2, 3] else sat_close
 
 
-# 0.95% 익절룰로 수정
-    tp_price_long = current_price * 1.095
-    tp_price_short = current_price * 0.9905
+# 1.05% 익절룰로 수정
+    tp_price_long = current_price * 1.0105
+    tp_price_short = current_price * 0.99
     
     # 디버그 정보 출력 (확장)
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
@@ -331,7 +319,9 @@ def trade_once():
     print(f"[YEST] yest_open={upbit_yesterday_open}, y_ma18={yesterday_ma18}, y_ma43={yesterday_ma43}")
     print(f"[TREND4] changes={trend['changes']}, up_3days={trend['up_3days']}, down_3days={trend['down_3days']}")
     print(f"[TREND6] all_up_6days={vol_trend['all_up_6days']}, all_down_6days={vol_trend['all_down_6days']}, high_vol_days={vol_trend['high_vol_days']}")
-
+    now = now_kst()
+    print(now) 
+    
     # 롱 진입 조건
     if current_price <= sat_close * 0.99:
         # 기존 3일 연속 하락 금지        
@@ -383,27 +373,33 @@ def trade_once():
     else:
         print("진입 조건 없음")
         
-# 메인 루프 제어 변수
+# 메인 루프 제어 변수 (그대로 유지)
 last_run_date = None
 
-# 무한 루프: 매일 09:00에 trade_once() 실행
+# 무한 루프: 매 1초마다 조건 확인
 while True:
     try:
         now = now_kst()
 
-        # ★★★ 토요일 06:00 포지션 강제 종료 ★★★
+
+        # ★★★ 토요일 06:00 포지션 강제 종료 (유지)
         if now.weekday() == 5 and now.hour == 6 and now.minute == 0:
             print("=== 토요일 06:00 포지션 종료 ===")
             close_sol_position()
-        
-        # 기존 매매 로직 (09:00)
-        elif now.hour == 9 and now.minute == 0:
-            if last_run_date != now.date():
-                trade_once()
-                last_run_date = now.date()
 
-        time.sleep(1)
+
+        # *******************************************************************
+        # ☆☆☆ 09:00 KST에 그날 한 번만 진입 ☆☆☆
+        if now.hour == 9 and now.minute == 0:
+            if last_run_date != now.date():
+                if not has_sol_position():  # 이 줄은 유지해도 됨 (선택)
+                    trade_once()
+                    last_run_date = now.date()
+
+
+        time.sleep(10)   # 1초마다 스캔 ( 유지 )
 
     except Exception as e:
         print(e)
-        time.sleep(5)
+        time.sleep(15)
+
