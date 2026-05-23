@@ -48,6 +48,8 @@
 
 # + 추가하려는 전략
 
+
+
 import time
 import datetime
 import ccxt
@@ -576,29 +578,28 @@ def trade_once_sol():
         print("진입 조건 없음")
 
 
-# ===================== 메인 루프 =====================
+# ===================== 메인 루프 수정: 15 분봉과 1 시간봉 독립 실행 =====================
 
 last_run_date = None
 last_1h_run_mark = None
 last_15m_run_mark = None
 
-
 while True:
     try:
         now = now_kst()
 
-        # 09:00 KST에 기존 SOL 전략 실행
+        # 09:00 KST 에 기존 SOL 전략 실행
         if now.hour == 9 and now.minute == 0:
             if last_run_date != now.date():
                 if not has_position(MARKET_ID_SOL):
                     trade_once_sol()
                 last_run_date = now.date()
 
-        # 1시간봉 RSI 전략: 매 정각 실행
+        # 1 시간봉 RSI 전략: 매 정각 실행 (15 분봉보다 먼저)
         if now.minute == 0:
             current_1h_mark = now.replace(minute=0, second=0, microsecond=0)
             if last_1h_run_mark != current_1h_mark:
-                # SOL 1시간봉 전략
+                # SOL 1 시간봉 전략
                 if not has_position(MARKET_ID_SOL):
                     trade_rsi_strategy(
                         symbol=SOL_SYMBOL,
@@ -610,7 +611,7 @@ while True:
                         use_position_check=True
                     )
 
-                # BTC 1시간봉 전략
+                # BTC 1 시간봉 전략
                 if not has_position(MARKET_ID_BTC):
                     trade_rsi_strategy(
                         symbol=BTC_SYMBOL,
@@ -624,11 +625,11 @@ while True:
 
                 last_1h_run_mark = current_1h_mark
 
-        # 15분봉 RSI 전략: 00, 15, 30, 45분마다 실행
-        if now.minute in [0, 15, 30, 45]:
+        # 15 분봉 RSI 전략: 00, 15, 30, 45 분마다 실행 (1 시간봉 이후)
+        if now.minute % 15 == 0:
             current_15m_mark = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
             if last_15m_run_mark != current_15m_mark:
-                # SOL 15분봉 전략
+                # SOL 15 분봉 전략
                 if not has_position(MARKET_ID_SOL):
                     trade_rsi_strategy(
                         symbol=SOL_SYMBOL,
@@ -640,7 +641,7 @@ while True:
                         use_position_check=True
                     )
 
-                # BTC 15분봉 전략
+                # BTC 15 분봉 전략
                 if not has_position(MARKET_ID_BTC):
                     trade_rsi_strategy(
                         symbol=BTC_SYMBOL,
@@ -654,9 +655,8 @@ while True:
 
                 last_15m_run_mark = current_15m_mark
 
-        time.sleep(5)
+        time.sleep(2)
 
     except Exception as e:
         print(e)
-        time.sleep(5)
-
+        time.sleep(2)
