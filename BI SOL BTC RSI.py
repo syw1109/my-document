@@ -45,9 +45,10 @@
 # 1hr봉 기준, 15분봉 기준
 # 상승 다이버전스, 하락 다이버전스
 # btc는변동성이 작으니 1시간봉, 15분봉 모두 T.P값을 0.5% 값으로 해주세요. 
+# 30분봉도 추가
+# cme값과 1%이상 차이 날때만 포지션 진입.
 
 # + 추가하려는 전략
-
 
 
 import time
@@ -337,6 +338,23 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
     print(f"[{symbol} {timeframe}] BULL={bull}")
     print(f"[{symbol} {timeframe}] BEAR={bear}")
 
+    # CME 편차 조건: Bull 이나 Bear 신호가 있을 때만 확인
+    if bull and bull["signal"] or bear and bear["signal"]:
+        try:
+            cme_price = get_last_saturday_6_close()
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
+            return
+
+        prev_close = bull["prev_close"] if bull and bull["signal"] else bear["prev_close"]
+        deviation = abs(prev_close - cme_price) / cme_price
+
+        if deviation < 0.01:  # 1% 미만
+            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+            return
+
+        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+
     if bull and bull["signal"]:
         tp_price = bull["prev_close"] * (1 + tp_long_pct)
         exchange.create_market_buy_order(symbol, amount)
@@ -353,6 +371,16 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
 
     print(f"[{symbol} {timeframe}] 진입 조건 없음")
 
+# 봉 놓치는것 방지
+def is_15m_execution_time(now):
+    return now.minute % 15 == 0 and now.second < 15
+
+def is_1h_execution_time(now):
+    return now.minute == 0 and now.second < 15
+
+def is_30m_execution_time(now):
+    """30 분봉: 분 %30 == 0 이고 초 < 15 일 때만 실행"""
+    return now.minute % 30 == 0 and now.second < 15
 
 # ===================== 09:00 SOL 기존 전략 =====================
 
@@ -579,7 +607,7 @@ def trade_once_sol():
 
 
 # ===================== 메인 루프 수정: 15 분봉과 1 시간봉 독립 실행 =====================
-
+      
 last_run_date = None
 last_1h_run_mark = None
 last_15m_run_mark = None
@@ -587,16 +615,15 @@ last_15m_run_mark = None
 while True:
     try:
         now = now_kst()
-
         # 09:00 KST 에 기존 SOL 전략 실행
-        if now.hour == 9 and now.minute == 0:
+        if now.hour == 9 and now.minute == 0 and now.second < 10:
             if last_run_date != now.date():
                 if not has_position(MARKET_ID_SOL):
                     trade_once_sol()
                 last_run_date = now.date()
 
         # 1 시간봉 RSI 전략: 매 정각 실행 (15 분봉보다 먼저)
-        if now.minute == 0:
+        if is_1h_execution_time(now):
             current_1h_mark = now.replace(minute=0, second=0, microsecond=0)
             if last_1h_run_mark != current_1h_mark:
                 # SOL 1 시간봉 전략
@@ -610,7 +637,7 @@ while True:
                         min_volatility=0.003,
                         use_position_check=True
                     )
-
+                    
                 # BTC 1 시간봉 전략
                 if not has_position(MARKET_ID_BTC):
                     trade_rsi_strategy(
@@ -625,8 +652,39 @@ while True:
 
                 last_1h_run_mark = current_1h_mark
 
-        # 15 분봉 RSI 전략: 00, 15, 30, 45 분마다 실행 (1 시간봉 이후)
-        if now.minute % 15 == 0:
+
+        # 30 분봉 RSI 전략: 00, 30 분마다 실행 (1 시간봉 이후)
+        if is_30m_execution_time(now):
+            current_30m_mark = now.replace(minute=(now.minute // 30) * 30, second=0, microsecond=0)
+            if last_30m_run_mark != current_30m_mark:
+                # SOL 30 분봉 전략 (1 시간봉과 동일한 수치)
+                if not has_position(MARKET_ID_SOL):
+                    trade_rsi_strategy(
+                        symbol=SOL_SYMBOL,
+                        market_id=MARKET_ID_SOL,
+                        timeframe='30m',
+                        tp_long_pct=0.01,
+                        tp_short_pct=0.01,
+                        min_volatility=0.003,
+                        use_position_check=True
+                    )
+                
+                # BTC 30 분봉 전략 (1 시간봉과 동일한 수치)
+                if not has_position(MARKET_ID_BTC):
+                    trade_rsi_strategy(
+                        symbol=BTC_SYMBOL,
+                        market_id=MARKET_ID_BTC,
+                        timeframe='30m',
+                        tp_long_pct=0.005,
+                        tp_short_pct=0.005,
+                        min_volatility=0.003,
+                        use_position_check=True
+                    )
+
+                last_30m_run_mark = current_30m_mark
+
+         # 15 분봉 RSI 전략: 00, 15, 30, 45 분마다 실행 (1 시간봉 이후)
+        if is_15m_execution_time(now):            
             current_15m_mark = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
             if last_15m_run_mark != current_15m_mark:
                 # SOL 15 분봉 전략
@@ -637,10 +695,9 @@ while True:
                         timeframe='15m',
                         tp_long_pct=0.009,
                         tp_short_pct=0.009,
-                        min_volatility=0.0023,
+                        min_volatility=0.0025,
                         use_position_check=True
                     )
-
                 # BTC 15 분봉 전략
                 if not has_position(MARKET_ID_BTC):
                     trade_rsi_strategy(
@@ -649,14 +706,14 @@ while True:
                         timeframe='15m',
                         tp_long_pct=0.005,
                         tp_short_pct=0.005,
-                        min_volatility=0.0022,
+                        min_volatility=0.0024,
                         use_position_check=True
                     )
 
                 last_15m_run_mark = current_15m_mark
 
-        time.sleep(2)
+        time.sleep(1)
 
     except Exception as e:
         print(e)
-        time.sleep(2)
+        time.sleep(2)        
