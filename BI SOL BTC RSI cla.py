@@ -352,7 +352,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
     print(f"[{symbol} {timeframe}] BEAR={bear}")
 
     # CME 편차 조건: Bull 이나 Bear 신호가 있을 때만 확인
-    if bull and bull["signal"] or bear and bear["signal"]:
+    if (bull and bull["signal"]) or (bear and bear["signal"]):
         try:
             cme_price = get_last_saturday_6_close()
         except Exception as e:
@@ -612,81 +612,59 @@ def trade_once_sol():
 
 # ===================== 메인 루프 수정: 15 분봉과 1 시간봉 독립 실행 =====================
       
+import threading
+
 last_run_date = None
 last_1h_run_mark = None
 last_15m_run_mark = None
+run_lock = threading.Lock()  # 동시에 같은 심볼 중복 실행 방지
+
+def run_1h_strategies():
+    try:
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(SOL_SYMBOL, MARKET_ID_SOL, '1h', 0.01, 0.01, 0.003)
+        if not has_position(MARKET_ID_BTC):
+            trade_rsi_strategy(BTC_SYMBOL, MARKET_ID_BTC, '1h', 0.005, 0.005, 0.003)
+    except Exception as e:
+        print(f"[1h thread error] {e}")
+
+def run_15m_strategies():
+    try:
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(SOL_SYMBOL, MARKET_ID_SOL, '15m', 0.009, 0.009, 0.0025)
+        if not has_position(MARKET_ID_BTC):
+            trade_rsi_strategy(BTC_SYMBOL, MARKET_ID_BTC, '15m', 0.005, 0.005, 0.0024)
+    except Exception as e:
+        print(f"[15m thread error] {e}")
 
 while True:
     try:
         now = now_kst()
-        # 09:00 KST 에 기존 SOL 전략 실행
-        if now.hour == 9 and now.minute == 0:  # ← second < 10 제거
-            if last_run_date != now.date():
-                if not has_position(MARKET_ID_SOL):
-                    trade_once_sol()
-                last_run_date = now.date()
 
-        # 1 시간봉 RSI 전략: 매 정각 실행 (15 분봉보다 먼저)
+        # 09:00 SOL 전략
+        if now.hour == 9 and now.minute == 0:
+            if last_run_date != now.date():
+                last_run_date = now.date()  # ← 먼저 세팅해서 중복 방지
+                threading.Thread(target=trade_once_sol, daemon=True).start()
+
+        # 1시간봉: 매 정각
         if now.minute == 0:
             current_1h_mark = now.replace(minute=0, second=0, microsecond=0)
             if last_1h_run_mark != current_1h_mark:
-                # SOL 1 시간봉 전략
-                if not has_position(MARKET_ID_SOL):
-                    trade_rsi_strategy(
-                        symbol=SOL_SYMBOL,
-                        market_id=MARKET_ID_SOL,
-                        timeframe='1h',
-                        tp_long_pct=0.01,
-                        tp_short_pct=0.01,
-                        min_volatility=0.003,
-                        use_position_check=True
-                    )
-                    
-                # BTC 1 시간봉 전략
-                if not has_position(MARKET_ID_BTC):
-                    trade_rsi_strategy(
-                        symbol=BTC_SYMBOL,
-                        market_id=MARKET_ID_BTC,
-                        timeframe='1h',
-                        tp_long_pct=0.005,
-                        tp_short_pct=0.005,
-                        min_volatility=0.003,
-                        use_position_check=True
-                    )
+                last_1h_run_mark = current_1h_mark  # ← 먼저 세팅
+                threading.Thread(target=run_1h_strategies, daemon=True).start()
 
-                last_1h_run_mark = current_1h_mark
-
-         # 15 분봉 RSI 전략: 00, 15, 30, 45 분마다 실행 (1 시간봉 이후)
-        if now.minute % 15 == 0:           
-            current_15m_mark = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+        # 15분봉: 15, 30, 45분 (00분은 위에서 처리)
+        if now.minute % 15 == 0:
+            current_15m_mark = now.replace(
+                minute=(now.minute // 15) * 15, second=0, microsecond=0
+            )
             if last_15m_run_mark != current_15m_mark:
-                # SOL 15 분봉 전략
-                if not has_position(MARKET_ID_SOL):
-                    trade_rsi_strategy(
-                        symbol=SOL_SYMBOL,
-                        market_id=MARKET_ID_SOL,
-                        timeframe='15m',
-                        tp_long_pct=0.009,
-                        tp_short_pct=0.009,
-                        min_volatility=0.0025,
-                        use_position_check=True
-                    )
-                # BTC 15 분봉 전략
-                if not has_position(MARKET_ID_BTC):
-                    trade_rsi_strategy(
-                        symbol=BTC_SYMBOL,
-                        market_id=MARKET_ID_BTC,
-                        timeframe='15m',
-                        tp_long_pct=0.005,
-                        tp_short_pct=0.005,
-                        min_volatility=0.0024,
-                        use_position_check=True
-                    )
-
-                last_15m_run_mark = current_15m_mark
+                last_15m_run_mark = current_15m_mark  # ← 먼저 세팅
+                threading.Thread(target=run_15m_strategies, daemon=True).start()
 
         time.sleep(1)
 
     except Exception as e:
         print(e)
-        time.sleep(2)        
+        time.sleep(2)      
