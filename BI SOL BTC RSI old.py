@@ -52,6 +52,16 @@
 # 다이버 전략에도 3일,6일 추세 값과, 이평선 깨지거나 돌파시에 롱 숏 진입 금지룰 동일하게 적용하고 싶음
 
 
+# 바이낸스 선물 거래소 연결
+exchange = ccxt.binance({
+    'apiKey': 'QAK7GNH9rWZTCTaozqdNJOR9zsxB6N8QJieYRMDvXDt27ngVEwJs9tDOMAQsc1Bi',
+    'secret': 'i8nNaQnZnsDL8gpAK7Q8yAWpxHZH9RYuHTY1q7ohMw9j1NXnmc1T6VCwetjfO48P',
+    'enableRateLimit': True,
+    'options': {
+        'defaultType': 'future',
+    },
+})
+
 
 
 import time
@@ -65,6 +75,7 @@ from datetime import timezone, timedelta
 
 # ===================== 기본 설정 =====================
 
+# KST 타임존 설정 및 전역 변수
 KST = timezone(timedelta(hours=9))
 SOL_SYMBOL = 'SOL/USDT'
 BTC_SYMBOL = 'BTC/USDT'
@@ -73,10 +84,11 @@ MARKET_ID_SOL = 'SOLUSDT'
 MARKET_ID_BTC = 'BTCUSDT'
 LEVERAGE = 5
 
+
 # 바이낸스 선물 거래소 연결
 exchange = ccxt.binance({
-    'apiKey': 'QAK7GNH9rWZTCTaozqdNJOR9zsxB6N8QJieYRMDvXDt27ngVEwJs9tDOMAQsc1Bi',
-    'secret': 'i8nNaQnZnsDL8gpAK7Q8yAWpxHZH9RYuHTY1q7ohMw9j1NXnmc1T6VCwetjfO48P',
+    'apiKey': '',
+    'secret': '',
     'enableRateLimit': True,
     'options': {
         'defaultType': 'future',
@@ -84,7 +96,6 @@ exchange = ccxt.binance({
 })
 
 print("autotrade start")
-
 
 def now_kst():
     """현재 KST 시간을 반환"""
@@ -150,50 +161,20 @@ def has_position(symbol_market_id):
     return False
 
 
-# ===================== 확정봉 + RSI 계산 =====================
+# ===================== RSI 계산 =====================
 
-def get_confirmed_candles_with_rsi(symbol, timeframe, count=100, rsi_length=14):
-    """
-    현재 진행 중인 봉을 타임스탬프로 명시적으로 제거하고
-    확정된 봉 기준 RSI를 Wilder(RMA) 방식으로 계산해 반환.
 
-    count=100: RSI 수렴 정확도 확보 (과거 100봉 전 영향 0.05% 이하)
-    """
-    tf_ms = {
-        '1m':  60_000,
-        '3m':  180_000,
-        '5m':  300_000,
-        '15m': 900_000,
-        '30m': 1_800_000,
-        '1h':  3_600_000,
-        '4h':  14_400_000,
-        '1d':  86_400_000,
-    }
-    
-    interval_ms = tf_ms.get(timeframe)
-    if interval_ms is None:
-        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")    
-
-    # count + 여유분 요청
-    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=count + 5)
+#바이낸스용 rsi 계산식
+def get_rsi_dataframe(symbol, timeframe='1h', limit=200, rsi_length=14, debug=False):
+    """Wilder 방식(RMA)으로 RSI를 계산"""
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     if ohlcv is None or len(ohlcv) < rsi_length + 16:
         raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
 
     df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
 
-    # 현재 진행 중인 봉 타임스탬프 계산 후 제거
-    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
-    current_candle_start = (now_ms // interval_ms) * interval_ms
-    df = df[df['ts'] < current_candle_start].copy()
-    df = df.tail(count).reset_index(drop=True)
-
-    if len(df) < rsi_length + 16:
-        raise ValueError(f"{symbol} {timeframe} 확정봉 데이터가 부족합니다.")
 
 
-
-
-    # Wilder(RMA) 방식 RSI 계산
     delta = df['close'].diff()
     gain = delta.clip(lower=0)
     loss = (-delta).clip(lower=0)
@@ -201,8 +182,8 @@ def get_confirmed_candles_with_rsi(symbol, timeframe, count=100, rsi_length=14):
     avg_gain = pd.Series(index=df.index, dtype='float64')
     avg_loss = pd.Series(index=df.index, dtype='float64')
 
-    avg_gain.iloc[rsi_length] = gain.iloc[1:rsi_length + 1].mean()
-    avg_loss.iloc[rsi_length] = loss.iloc[1:rsi_length + 1].mean()
+    avg_gain.iloc[rsi_length] = gain.iloc[1:rsi_length+1].mean()
+    avg_loss.iloc[rsi_length] = loss.iloc[1:rsi_length+1].mean()
 
     for i in range(rsi_length + 1, len(df)):
         avg_gain.iloc[i] = (avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]) / rsi_length
@@ -211,32 +192,43 @@ def get_confirmed_candles_with_rsi(symbol, timeframe, count=100, rsi_length=14):
     rs = avg_gain / avg_loss.replace(0, np.nan)
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    return df.dropna(subset=['rsi']).reset_index(drop=True)
+    if debug:
+        last_row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+        print(f"[RSI DEBUG] {symbol} {timeframe}")
+        print(f"[RSI DEBUG] last_close={last_row['close']:.6f}, last_rsi={last_row['rsi']:.4f}")
+        print(f"[RSI DEBUG] prev_close={prev_row['close']:.6f}, prev_rsi={prev_row['rsi']:.4f}")
+        print(f"[RSI DEBUG] recent_rsi_tail={df['rsi'].tail(5).round(4).tolist()}")
 
+    return df
 
 # ===================== RSI 다이버전스 판단 =====================
 
-def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003):
+def analyze_bullish_divergence(symbol, timeframe, base_count=15, rsi_raise_pct=0.02, min_volatility=0.003):
     """
     상승 다이버전스 조건 판단:
-    - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
-    - 그 이전 15개 봉(iloc[-16:-1])의 lowest low보다 직전봉 close가 더 낮아야 함
-    - 그 이전 15개 봉의 lowest rsi보다 직전봉 rsi가 지정 비율 이상 높아야 함
+    - 직전 16개 봉 중 마지막 봉을 판단봉으로 사용
+    - 이전 15개 봉의 lowest low보다 직전봉 close가 더 낮아야 함
+    - 이전 15개 봉의 lowest rsi보다 직전봉 rsi가 지정 비율 이상 높아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
-    """
-    df = get_confirmed_candles_with_rsi(symbol, timeframe)
+    """    
+    df = get_rsi_dataframe(symbol, timeframe=timeframe)
 
-    if len(df) < 16:
+    # 현재 진행 중인 봉 제외하고 직전 16개 완성봉만 사용
+    recent = df.iloc[-17:-1].copy()
+    recent = recent.dropna(subset=['rsi'])
+
+    if len(recent) < 16:
         return None
 
-    prev_candle = df.iloc[-1]       # 직전 확정봉
-    base_15 = df.iloc[-16:-1]       # 그 이전 15봉
+    prev_candle = recent.iloc[-1]     # 직전 마감봉
+    base_15 = recent.iloc[:-1].copy() # 그 이전 15개 봉
 
     lowest_low = base_15['low'].min()
     lowest_rsi = base_15['rsi'].min()
 
-    cond_price      = prev_candle['close'] < lowest_low
-    cond_rsi        = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
+    cond_price = prev_candle['close'] < lowest_low
+    cond_rsi = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
     cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
     signal = cond_price and cond_rsi and cond_volatility
@@ -256,27 +248,31 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
     }
 
 
-def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003):
+def analyze_bearish_divergence(symbol, timeframe, base_count=15, rsi_drop_pct=0.02, min_volatility=0.003):
     """
     하락 다이버전스 조건 판단:
-    - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
-    - 그 이전 15개 봉(iloc[-16:-1])의 highest high보다 직전봉 close가 더 높아야 함
-    - 그 이전 15개 봉의 highest rsi보다 직전봉 rsi가 지정 비율 이상 낮아야 함
+    - 직전 16개 봉 중 마지막 봉을 판단봉으로 사용
+    - 이전 15개 봉의 highest high보다 직전봉 close가 더 높아야 함
+    - 이전 15개 봉의 highest rsi보다 직전봉 rsi가 지정 비율 이상 낮아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
-    """
-    df = get_confirmed_candles_with_rsi(symbol, timeframe)
+    """    
+    df = get_rsi_dataframe(symbol, timeframe=timeframe)
 
-    if len(df) < 16:
+    # 현재 진행 중인 봉 제외하고 직전 16개 완성봉만 사용
+    recent = df.iloc[-17:-1].copy()
+    recent = recent.dropna(subset=['rsi'])
+
+    if len(recent) < 16:
         return None
 
-    prev_candle = df.iloc[-1]
-    base_15 = df.iloc[-16:-1]
+    prev_candle = recent.iloc[-1]
+    base_15 = recent.iloc[:-1].copy()
 
     highest_high = base_15['high'].max()
-    highest_rsi  = base_15['rsi'].max()
+    highest_rsi = base_15['rsi'].max()
 
-    cond_price      = prev_candle['close'] > highest_high
-    cond_rsi        = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
+    cond_price = prev_candle['close'] > highest_high
+    cond_rsi = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
     cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
     signal = cond_price and cond_rsi and cond_volatility
@@ -296,35 +292,47 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
     }
 
 
-# ===================== 공통 RSI 전략 실행 =====================
-
-def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003):
-    """공통 RSI 다이버전스 전략 실행 함수"""
+def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003, use_position_check=True):
+    """공통 RSI 전략 실행 함수"""
     set_margin_and_leverage(symbol)
 
-    if has_position(market_id):
+    # 심볼별 포지션이 있으면 추가 진입 금지
+    if use_position_check and has_position(market_id):
         print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
         return
 
     available_usdt = get_available_usdt()
-    margin_to_use  = available_usdt * 0.5
-    current_price  = float(exchange.fetch_ticker(symbol)['last'])
-    notional       = margin_to_use * LEVERAGE
-    amount         = round(notional / current_price, 3)
+
+    # 선물 계좌 잔고의 50%를 증거금으로 사용
+    margin_to_use = available_usdt * 0.5
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
 
     if amount <= 0:
         print(f"[{symbol} {timeframe}] 주문 수량이 0이라서 중단")
         return
 
-    bull = analyze_bullish_divergence(symbol=symbol, timeframe=timeframe,
-                                      rsi_raise_pct=0.02, min_volatility=min_volatility)
-    bear = analyze_bearish_divergence(symbol=symbol, timeframe=timeframe,
-                                      rsi_drop_pct=0.02,  min_volatility=min_volatility)
+    bull = analyze_bullish_divergence(
+        symbol=symbol,
+        timeframe=timeframe,
+        base_count=15,
+        rsi_raise_pct=0.02,
+        min_volatility=min_volatility
+    )
+
+    bear = analyze_bearish_divergence(
+        symbol=symbol,
+        timeframe=timeframe,
+        base_count=15,
+        rsi_drop_pct=0.02,
+        min_volatility=min_volatility
+    )
 
     print(f"[{symbol} {timeframe}] BULL={bull}")
     print(f"[{symbol} {timeframe}] BEAR={bear}")
 
-    # CME 편차 조건
+    # CME 편차 조건: Bull 이나 Bear 신호가 있을 때만 확인
     if (bull and bull["signal"]) or (bear and bear["signal"]):
         try:
             cme_price = get_last_saturday_6_close()
@@ -332,38 +340,16 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
             print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
             return
 
-        prev_close = bull["prev_close"] if (bull and bull["signal"]) else bear["prev_close"]
-        deviation  = abs(prev_close - cme_price) / cme_price
+        prev_close = bull["prev_close"] if bull and bull["signal"] else bear["prev_close"]
+        deviation = abs(prev_close - cme_price) / cme_price
 
-        if deviation < 0.01:
-            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
-                  f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+        if deviation < 0.01:  # 1% 미만
+            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
             return
 
-        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 "
-              f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
-
-    # ── MA18 추세 필터 ──────────────────────────────────────
-    trend     = ma18_4day_change_trend()
-    vol_trend = ma18_6day_volatility_trend()
-
-    if trend is None or vol_trend is None:
-        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
-        return
-
-    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
-    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
-    # ────────────────────────────────────────────────────────
+        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
 
     if bull and bull["signal"]:
-        # 롱 진입 금지 조건
-        if trend["down_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3일 연속 하락으로 롱 진입 금지")
-            return
-        if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6일 연속 하락 + 고변동 5일이상으로 롱 진입 금지")
-            return
-
         tp_price = bull["prev_close"] * (1 + tp_long_pct)
         exchange.create_market_buy_order(symbol, amount)
         place_tp_long(symbol, amount, tp_price)
@@ -371,14 +357,6 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
         return
 
     if bear and bear["signal"]:
-        # 숏 진입 금지 조건
-        if trend["up_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3일 연속 상승으로 숏 진입 금지")
-            return
-        if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6일 연속 상승 + 고변동 5일이상으로 숏 진입 금지")
-            return
-
         tp_price = bear["prev_close"] * (1 - tp_short_pct)
         exchange.create_market_sell_order(symbol, amount)
         place_tp_short(symbol, amount, tp_price)
@@ -386,6 +364,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
         return
 
     print(f"[{symbol} {timeframe}] 진입 조건 없음")
+
 
 
 # ===================== 09:00 SOL 기존 전략 =====================
@@ -401,8 +380,8 @@ def get_last_saturday_6_close():
     if now < sat6:
         sat6 -= datetime.timedelta(days=7)
 
-    since_ms  = int((sat6 - datetime.timedelta(days=7)).timestamp() * 1000)
-    klines    = exchange.fetch_ohlcv(SOL_SYMBOL, timeframe='1h', since=since_ms, limit=200)
+    since_ms = int((sat6 - datetime.timedelta(days=7)).timestamp() * 1000)
+    klines = exchange.fetch_ohlcv(SOL_SYMBOL, timeframe='1h', since=since_ms, limit=200)
     target_ms = int(sat6.astimezone(datetime.timezone.utc).timestamp() * 1000)
 
     for o in klines:
@@ -465,14 +444,19 @@ def get_upbit_ma18_series():
 
 def ma18_4day_change_trend():
     """최근 4일 MA18 변화율을 보고 3일 연속 상승/하락 여부를 판단"""
-    ma     = get_upbit_ma18_series()
-    last5  = ma.iloc[-5:].tolist()
+    ma = get_upbit_ma18_series()
+    last5 = ma.iloc[-5:].tolist()
     if len(last5) < 5:
         return None
 
-    changes = [(last5[i] / last5[i - 1] - 1) * 100 for i in range(1, 5)]
+    changes = []
+    for i in range(1, 5):
+        prev = last5[i - 1]
+        cur = last5[i]
+        change_pct = (cur / prev - 1) * 100
+        changes.append(change_pct)
 
-    up_3days   = changes[0] >= 0.6 and changes[1] >= 0.6 and changes[2] >= 0.6
+    up_3days = changes[0] >= 0.6 and changes[1] >= 0.6 and changes[2] >= 0.6
     down_3days = changes[0] <= -0.6 and changes[1] <= -0.6 and changes[2] <= -0.6
 
     return {
@@ -489,11 +473,17 @@ def ma18_6day_volatility_trend():
     if len(ma) < 7:
         return None
 
-    last7   = ma.iloc[-7:].tolist()
-    changes = [(last7[i] / last7[i - 1] - 1) * 100 for i in range(1, 7)]
+    last7 = ma.iloc[-7:].tolist()
+    changes = []
 
-    all_up        = all(c > 0 for c in changes)
-    all_down      = all(c < 0 for c in changes)
+    for i in range(1, 7):
+        prev = last7[i - 1]
+        cur = last7[i]
+        change_pct = (cur / prev - 1) * 100
+        changes.append(change_pct)
+
+    all_up = all(c > 0 for c in changes)
+    all_down = all(c < 0 for c in changes)
     high_vol_days = sum(abs(c) >= 0.4 for c in changes)
 
     return {
@@ -518,7 +508,7 @@ def trade_once_sol():
         print("기존 SOL 포지션이 있어서 거래하지 않음")
         return
 
-    sat_close     = get_last_saturday_6_close()
+    sat_close = get_last_saturday_6_close()
     current_price = float(exchange.fetch_ticker(SOL_SYMBOL)['last'])
 
     trend = ma18_4day_change_trend()
@@ -531,43 +521,45 @@ def trade_once_sol():
         print("MA18 6일 변동성 추세 데이터를 가져오지 못했습니다.")
         return
 
-    upbit_ma18, upbit_ma43         = get_upbit_ma18_ma43()
+    upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
     yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
-    upbit_today_open               = get_upbit_today_open()
-    upbit_yesterday_open           = get_upbit_yesterday_open()
+    upbit_today_open = get_upbit_today_open()
+    upbit_yesterday_open = get_upbit_yesterday_open()
 
-    yesterday_above_both    = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
-    today_below_either      = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
-    yesterday_not_above_both = upbit_yesterday_open <= yesterday_ma18 or upbit_yesterday_open <= yesterday_ma43
-    today_above_both        = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
+    yesterday_above_both = (upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43)
+    today_below_either = (upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43)
+
+    yesterday_not_above_both = (upbit_yesterday_open <= yesterday_ma18 or upbit_yesterday_open <= yesterday_ma43)
+    today_above_both = (upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43)
 
     available_usdt = get_available_usdt()
-    margin_to_use  = available_usdt * 0.5
-    notional       = margin_to_use * LEVERAGE
-    amount         = round(notional / current_price, 3)
+    margin_to_use = available_usdt * 0.5
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
 
     if amount <= 0:
         print("주문 수량이 0이라서 중단")
         return
 
-    tp_price_long  = current_price * 1.0105
+    tp_price_long = current_price * 1.0105
     tp_price_short = current_price * 0.99
 
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
     print(f"[YEST] yest_open={upbit_yesterday_open}, y_ma18={yesterday_ma18}, y_ma43={yesterday_ma43}")
     print(f"[TREND4] changes={trend['changes']}, up_3days={trend['up_3days']}, down_3days={trend['down_3days']}")
-    print(f"[TREND6] all_up_6days={vol_trend['all_up_6days']}, all_down_6days={vol_trend['all_down_6days']}, "
-          f"high_vol_days={vol_trend['high_vol_days']}")
+    print(f"[TREND6] all_up_6days={vol_trend['all_up_6days']}, all_down_6days={vol_trend['all_down_6days']}, high_vol_days={vol_trend['high_vol_days']}")
     print(now)
 
     if current_price <= sat_close * 0.99:
         if trend["down_3days"]:
             print("3일 연속 0.6% 이상 하락이라 롱 진입 금지")
             return
+
         if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
             print("6일 연속 하락 + 변동성 0.4%이상 5일이상 → 롱 진입 금지")
             return
+
         if yesterday_above_both and today_below_either:
             print("어제 MA위→오늘 MA아래 전환으로 롱 진입 금지")
             return
@@ -581,9 +573,11 @@ def trade_once_sol():
         if trend["up_3days"]:
             print("3일 연속 0.6% 이상 상승이라 숏 진입 금지")
             return
+
         if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
             print("6일 연속 상승 + 변동성 0.4%이상 5일이상 → 숏 진입 금지")
             return
+
         if yesterday_not_above_both and today_above_both:
             print("어제 MA아래→오늘 MA위 전환으로 숏 진입 금지")
             return
@@ -597,90 +591,61 @@ def trade_once_sol():
         print("진입 조건 없음")
 
 
-# ===================== 메인 루프 =====================
+# ===================== 메인 루프 수정: 15 분봉과 1 시간봉 독립 실행 =====================
+      
+import threading
 
 last_run_date = None
+last_1h_run_mark = None
+last_15m_run_mark = None
+run_lock = threading.Lock()  # 동시에 같은 심볼 중복 실행 방지
+
+def run_1h_strategies():
+    try:
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(SOL_SYMBOL, MARKET_ID_SOL, '1h', 0.01, 0.01, 0.003)
+        if not has_position(MARKET_ID_BTC):
+            trade_rsi_strategy(BTC_SYMBOL, MARKET_ID_BTC, '1h', 0.005, 0.005, 0.003)
+    except Exception as e:
+        print(f"[1h thread error] {e}")
+
+def run_15m_strategies():
+    try:
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(SOL_SYMBOL, MARKET_ID_SOL, '15m', 0.009, 0.009, 0.0025)
+        if not has_position(MARKET_ID_BTC):
+            trade_rsi_strategy(BTC_SYMBOL, MARKET_ID_BTC, '15m', 0.005, 0.005, 0.0024)
+    except Exception as e:
+        print(f"[15m thread error] {e}")
 
 while True:
     try:
         now = now_kst()
 
-        # 09:00 KST SOL 기존 전략 (하루 1회)
-        if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
-            last_run_date = now.date()
-            if not has_position(MARKET_ID_SOL):
-                trade_once_sol()
+        # 09:00 SOL 전략
+        if now.hour == 9 and now.minute == 0:
+            if last_run_date != now.date():
+                last_run_date = now.date()  # ← 먼저 세팅해서 중복 방지
+                threading.Thread(target=trade_once_sol, daemon=True).start()
 
-        # 1시간봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='1h',
-                tp_long_pct=0.012,
-                tp_short_pct=0.012,
-                min_volatility=0.003
+        # 1시간봉: 매 정각
+        if now.minute == 0:
+            current_1h_mark = now.replace(minute=0, second=0, microsecond=0)
+            if last_1h_run_mark != current_1h_mark:
+                last_1h_run_mark = current_1h_mark  # ← 먼저 세팅
+                threading.Thread(target=run_1h_strategies, daemon=True).start()
+
+        # 15분봉: 15, 30, 45분 (00분은 위에서 처리)
+        if now.minute % 15 == 0:
+            current_15m_mark = now.replace(
+                minute=(now.minute // 15) * 15, second=0, microsecond=0
             )
+            if last_15m_run_mark != current_15m_mark:
+                last_15m_run_mark = current_15m_mark  # ← 먼저 세팅
+                threading.Thread(target=run_15m_strategies, daemon=True).start()
 
-        # 1시간봉 전략 (BTC)
-        if not has_position(MARKET_ID_BTC):
-            trade_rsi_strategy(
-                symbol=BTC_SYMBOL,
-                market_id=MARKET_ID_BTC,
-                timeframe='1h',
-                tp_long_pct=0.0065,
-                tp_short_pct=0.0065,
-                min_volatility=0.003
-            )
-
-        # 30분봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='30m',
-                tp_long_pct=0.011,
-                tp_short_pct=0.011,
-                min_volatility=0.003
-            )
-
-        # 30분봉 전략 (BTC)
-        if not has_position(MARKET_ID_BTC):
-            trade_rsi_strategy(
-                symbol=BTC_SYMBOL,
-                market_id=MARKET_ID_BTC,
-                timeframe='30m',
-                tp_long_pct=0.006,
-                tp_short_pct=0.006,
-                min_volatility=0.003
-            )
-
-        # 15분봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m',
-                tp_long_pct=0.01,
-                tp_short_pct=0.01,
-                min_volatility=0.0025
-            )
-
-
-        # 15분봉 전략 (BTC)
-        if not has_position(MARKET_ID_BTC):
-            trade_rsi_strategy(
-                symbol=BTC_SYMBOL,
-                market_id=MARKET_ID_BTC,
-                timeframe='15m',
-                tp_long_pct=0.0055,
-                tp_short_pct=0.0055,
-                min_volatility=0.0024
-            )
-
-        time.sleep(20)  # 30초 간격 (API rate limit 여유 확보)
+        time.sleep(1)
 
     except Exception as e:
-        print(f"[MAIN ERROR] {e}")
-        time.sleep(3)
-  
+        print(e)
+        time.sleep(2)      
