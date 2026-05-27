@@ -47,9 +47,11 @@
 # btc는변동성이 작으니 1시간봉, 15분봉 모두 T.P값을 0.5% 값으로 해주세요. 
 # 30분봉도 추가
 # cme값과 1%이상 차이 날때만 포지션 진입.
+# 다이버 전략에도 3일,6일 추세 값과, 이평선 깨지거나 돌파시에 롱 숏 진입 금지룰 동일하게 적용하고 싶음
+# lowest close 기준 전략도 추가
 
 # + 추가하려는 전략
-# 다이버 전략에도 3일,6일 추세 값과, 이평선 깨지거나 돌파시에 롱 숏 진입 금지룰 동일하게 적용하고 싶음
+
 
 
 
@@ -254,6 +256,121 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
         "volatility_condition": cond_volatility,
         "tp_price": float(prev_candle['close'])
     }
+
+
+#---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
+def analyze_bullish_divergence_close(symbol, timeframe, rsi_raise_pct=0.04, min_volatility=0.003):
+    """
+    상승 다이버전스 조건 판단 (close 기준 - 완화된 룰):
+    - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
+    - 그 이전 15개 봉(iloc[-16:-1])의 lowest close보다 직전봉 close가 더 낮아야 함
+    - 그 이전 15개 봉의 lowest rsi보다 직전봉 rsi가 지정 비율 이상 높아야 함
+    - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
+    """
+    df = get_confirmed_candles_with_rsi(symbol, timeframe)
+
+    if len(df) < 16:
+        return None
+
+    prev_candle = df.iloc[-1]
+    base_15 = df.iloc[-16:-1]
+
+    lowest_close = base_15['close'].min()  # low → close 로 변경
+    lowest_rsi   = base_15['rsi'].min()
+
+    cond_price      = prev_candle['close'] < lowest_close  # low → close 로 변경
+    cond_rsi        = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
+    cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+
+    signal = cond_price and cond_rsi and cond_volatility
+
+    return {
+        "signal": signal,
+        "side": "long",
+        "lowest_close": float(lowest_close),  # low → close 로 변경
+        "lowest_rsi": float(lowest_rsi),
+        "prev_open": float(prev_candle['open']),
+        "prev_close": float(prev_candle['close']),
+        "prev_rsi": float(prev_candle['rsi']),
+        "price_condition": cond_price,
+        "rsi_condition": cond_rsi,
+        "volatility_condition": cond_volatility,
+        "tp_price": float(prev_candle['close'])
+    }
+    
+    
+def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, min_volatility=0.003):
+    """close 기준 상승 다이버전스 전략 실행 함수 (롱만)"""
+    set_margin_and_leverage(symbol)
+
+    if has_position(market_id):
+        print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
+        return
+
+    available_usdt = get_available_usdt()
+    margin_to_use  = available_usdt * 0.5
+    current_price  = float(exchange.fetch_ticker(symbol)['last'])
+    notional       = margin_to_use * LEVERAGE
+    amount         = round(notional / current_price, 3)
+
+    if amount <= 0:
+        print(f"[{symbol} {timeframe}] 주문 수량이 0이라서 중단")
+        return
+
+    bull_close = analyze_bullish_divergence_close(
+        symbol=symbol,
+        timeframe=timeframe,
+        rsi_raise_pct=0.04,
+        min_volatility=min_volatility
+    )
+
+    print(f"[{symbol} {timeframe}] BULL_CLOSE={bull_close}")
+
+    # CME 편차 조건
+    if bull_close and bull_close["signal"]:
+        try:
+            cme_price = get_last_saturday_6_close()
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
+            return
+
+        deviation = abs(bull_close["prev_close"] - cme_price) / cme_price
+
+        if deviation < 0.01:
+            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
+                  f"| CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
+            return
+
+        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 "
+              f"| CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
+
+    # MA18 추세 필터
+    trend     = ma18_4day_change_trend()
+    vol_trend = ma18_6day_volatility_trend()
+
+    if trend is None or vol_trend is None:
+        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
+        return
+
+    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
+    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
+
+    if bull_close and bull_close["signal"]:
+        if trend["down_3days"]:
+            print(f"[{symbol} {timeframe}] MA18 3일 연속 하락으로 롱 진입 금지")
+            return
+        if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
+            print(f"[{symbol} {timeframe}] MA18 6일 연속 하락 + 고변동 5일이상으로 롱 진입 금지")
+            return
+
+        tp_price = bull_close["prev_close"] * (1 + tp_long_pct)
+        exchange.create_market_buy_order(symbol, amount)
+        place_tp_long(symbol, amount, tp_price)
+        print(f"[{symbol} {timeframe}] CLOSE기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        return
+
+    print(f"[{symbol} {timeframe}] CLOSE기준 진입 조건 없음")    
+#---------------- lowest close 기준
 
 
 def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003):
@@ -633,27 +750,6 @@ while True:
                 min_volatility=0.003
             )
 
-        # 30분봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='30m',
-                tp_long_pct=0.011,
-                tp_short_pct=0.011,
-                min_volatility=0.003
-            )
-
-        # 30분봉 전략 (BTC)
-        if not has_position(MARKET_ID_BTC):
-            trade_rsi_strategy(
-                symbol=BTC_SYMBOL,
-                market_id=MARKET_ID_BTC,
-                timeframe='30m',
-                tp_long_pct=0.006,
-                tp_short_pct=0.006,
-                min_volatility=0.003
-            )
 
         # 15분봉 전략 (SOL)
         if not has_position(MARKET_ID_SOL):
@@ -678,7 +774,30 @@ while True:
                 min_volatility=0.0024
             )
 
-        time.sleep(20)  # 30초 간격 (API rate limit 여유 확보)
+        # close 기준 상승 다이버전스 전략 - SOL 1시간봉
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='1h',
+                tp_long_pct=0.01,
+                min_volatility=0.003
+            )
+
+        # close 기준 상승 다이버전스 전략 - SOL 15분봉
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m',
+                tp_long_pct=0.009,
+                min_volatility=0.0025
+            )
+
+
+
+
+        time.sleep(25)  # 25초 간격 (API rate limit 여유 확보)
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
