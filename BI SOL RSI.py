@@ -61,7 +61,7 @@
 # - 잔고부족으로 계속 매수되는 현상 방지
 # -  실수로 잔고 너무 많아서 사지는것 방지
 
-# 15분봉 - 15분, 60분봉-60분 쿨다운룰 추가
+# 25/6/5 15분봉 - 15분, 60분봉-60분 쿨다운룰 추가
 # 15분봉 룰은 15분이내 매매 기록을 보고, 1시간봉 룰은 1시간 이내의 매매 기록을 보고 중복 진입하는것을 방지한다.(이번 봉에서 익절 나버리면 또 진입되기 때문) 
 # 롱숏 동일
 
@@ -1435,8 +1435,8 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.013,
-                tp_short_pct=0.013,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.003
             )
 
@@ -1447,8 +1447,8 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.012,
-                tp_short_pct=0.012,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0025
             )
 
@@ -1460,8 +1460,8 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.011,
-                tp_short_pct=0.011,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.003
             )
 
@@ -1472,8 +1472,8 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.01,
-                tp_short_pct=0.01,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0015
             )
             
@@ -1492,7 +1492,7 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.011,
+                tp_long_pct=0.02,
                 min_volatility=0.003
             )
             # 15 분봉
@@ -1500,7 +1500,7 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.01,
+                tp_long_pct=0.02,
                 min_volatility=0.0025
             )
 
@@ -1513,7 +1513,7 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_short_pct=0.011,
+                tp_short_pct=0.015,
                 min_volatility=0.003
             )
             # 15 분봉
@@ -1521,7 +1521,7 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_short_pct=0.01,
+                tp_short_pct=0.015,
                 min_volatility=0.0025
             )          
 
