@@ -68,7 +68,7 @@
 
 # 26/6/10
 # 도지룰 RSI, CLOSE 값 기준 완화. 더 잦은 매매목적
-# LINK 룰 현재봉 기준 0.9% 이상 변동성+직전 lowest/highest close값 대비 0.3% 이상 변동성, 직전봉 RSI가 2% 이상 변동성 가질때 진입. 단타 목적
+# LINK 룰 현재봉 기준 0.9% 이상 변동성+직전 lowest/highest close값 대비 0.3% 이상 변동성, 직전봉 RSI가 2% 이상 변동성 가질때 진입. 단타 목적, 직전15봉의 변동성 2.3%이상
 # + 추가하려는 전략
 
 
@@ -1455,7 +1455,8 @@ def trade_rsi_close_strategy_doge(symbol, market_id, timeframe, tp_long_pct, tp_
 # ──────────────────────────────────────────────────────────────
 def trade_current_bar_09_pct_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
                                        min_volatility=0.003, current_bar_pct=0.009,
-                                       price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
+                                       price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003,
+                                       range_volatility_pct=0.023):
     """
     CHAINLINK (LINK) 보유 시 현재 진행봉 0.9% + 다이버전스 듀얼 조건 (롱 + 숏)
     LINK 보유 시에만 실행, SOL 포지션 있으면 진입 금지
@@ -1463,6 +1464,7 @@ def trade_current_bar_09_pct_strategy(symbol, market_id, timeframe, tp_long_pct,
     ✅ 추가 매수 (SOL > 0 개) → TP 안 걸기
     ✅ 현재봉 0.9% + 직전봉 다이버전스 (둘 다 만족)
     ✅ min_volatility, deviation, cond_price 모두 현재봉 현재가 기준
+    ✅ 직전 15개 봉 close 기준 변동성 필터 추가 직전 15개봉 (고가-저가)/고가 > range_volatility_pct 2.3%
     """
 
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
@@ -1513,33 +1515,19 @@ def trade_current_bar_09_pct_strategy(symbol, market_id, timeframe, tp_long_pct,
     # 1. 현재 진행봉 체크: 현재가 - 시가 차이 비율이 current_bar_pct (0.9%) 이상인지
     # ──────────────────────────────────────────────────────────────
     try:
-        tf_ms = {
-            '1m':  60_000,
-            '3m':  180_000,
-            '5m':  300_000,
-            '15m': 900_000,
-            '30m': 1_800_000,
-            '1h':  3_600_000,
-            '4h':  14_400_000,
-            '1d':  86_400_000,
-        }
-        interval_ms = tf_ms.get(timeframe)
-        now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
-        current_candle_start = (now_ms // interval_ms) * interval_ms
-        
         # 현재 진행봉 데이터 조회
         ohlcv_current = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=2)
         if ohlcv_current is None or len(ohlcv_current) < 2:
             print(f"[{symbol} LINK] 현재 진행봉 데이터 조회 실패")
             return
-        
+
         current_bar_open = ohlcv_current[-1][1]  # open (시가)
-        current_bar_close = current_price  # 현재가 (real-time)
-        
+        current_bar_close = current_price         # 현재가 (real-time)
+
         current_bar_change_pct = abs(current_bar_close - current_bar_open) / current_bar_open
-        
+
         print(f"[{symbol} LINK] 현재 진행봉 변화율: {current_bar_change_pct*100:.2f}% (시가={current_bar_open:.6f}, 현재가={current_bar_close:.6f}, 기준: {current_bar_pct*100:.2f}%)")
-        
+
         current_bar_cond = current_bar_change_pct >= current_bar_pct
 
         if not current_bar_cond:
@@ -1551,9 +1539,9 @@ def trade_current_bar_09_pct_strategy(symbol, market_id, timeframe, tp_long_pct,
         # ──────────────────────────────────────────────────────────────
         current_volatility = abs(current_bar_close - current_bar_open) / current_bar_open
         vol_cond = current_volatility >= min_volatility
-        
+
         print(f"[{symbol} LINK] 현재봉 변동성: {current_volatility*100:.2f}% (기준: {min_volatility*100:.2f}%)")
-        
+
         if not vol_cond:
             print(f"[{symbol} LINK] 현재봉 변동성 {current_volatility*100:.2f}% 로 기준 {min_volatility*100:.2f}% 미만으로 진입 금지")
             return
@@ -1575,6 +1563,21 @@ def trade_current_bar_09_pct_strategy(symbol, market_id, timeframe, tp_long_pct,
     prev_candle = df.iloc[-1]
     # 이전 15 개 봉 = iloc[-2:-17] (직전봉 제외)
     base_15 = df.iloc[-2:-17]
+
+    if len(base_15) < 15:
+        print(f"[{symbol} LINK] 직전 15개 봉 데이터 부족")
+        return
+
+    # 직전 15개 봉 close 기준 변동성 체크
+    range_high = base_15['close'].max()
+    range_low = base_15['close'].min()
+    range_volatility = (range_high - range_low) / range_high
+
+    print(f"[{symbol} LINK] 직전 15개 봉 close 변동성: {range_volatility*100:.2f}% (기준: {range_volatility_pct*100:.2f}%)")
+
+    if range_volatility <= range_volatility_pct:
+        print(f"[{symbol} LINK] 직전 15개 봉 변동성 미만으로 진입 금지")
+        return
 
     # 상승 다이버전스 (롱)
     lowest_close = base_15['close'].min()
@@ -1805,8 +1808,8 @@ while True:
                 tp_long_pct=0.02,
                 tp_short_pct=0.015,
                 min_volatility=0.0025,
-                price_diff_pct=0.001,
-                rsi_raise_pct=0.003,
+                price_diff_pct=0.001, #close 가격 0.1% 차이
+                rsi_raise_pct=0.003, # rsi  0.3% 차이
                 rsi_drop_pct=0.003
             )
             # 15 분봉
@@ -1826,10 +1829,13 @@ while True:
         # ──────────────────────────────────────────────────────────────
         # CHAINLINK (LINK) 보유 시 현재봉 0.9% 변동성 + 다이버전스 듀얼 전략 (롱 + 숏)
         # ──────────────────────────────────────────────────────────────
+        
+        
         link_position = get_position_amount('LINK/USDT')
         if link_position != 0 and not has_position(MARKET_ID_SOL):
             print(f"[LINK] LINK 보유량: {link_position}개 - 0.9%+다이버전스 듀얼 전략 실행")
             
+          
             # 1 시간봉
             trade_current_bar_09_pct_strategy(
                 symbol=SOL_SYMBOL,
@@ -1838,10 +1844,11 @@ while True:
                 tp_long_pct=0.015,     # 롱 익절 %도 보수적으로
                 tp_short_pct=0.01,   # 숏시 익절 % 보수적으로가자
                 min_volatility=0.0025, # 이미 현재봉이 -0.9%일테니 변동성은 의미없음
-                current_bar_pct=0.009, # 현재봉이 시가대비 -0.9% 하락시 조건 발동
-                price_diff_pct=0.003, # 현재봉이 그래도 직전 15개봉들의 lowest close보다 0.3%는 낮아야지
+                current_bar_pct=0.01, # 현재봉이 시가대비 -1% 하락시 조건 발동 (1h 봉)
+                price_diff_pct=0.004, # 현재봉이 그래도 직전 15개봉들의 lowest close보다 0.4%는 낮아야지 (1h 봉)
                 rsi_raise_pct=0.02, # 직전봉의 rsi를 보기 때문에 2% 높게 설정
-                rsi_drop_pct=0.02  # 직전봉의 rsi를 보기 때문에 2% 높게 설정
+                rsi_drop_pct=0.02,  # 직전봉의 rsi를 보기 때문에 2% 높게 설정
+                range_volatility_pct=0.023 # 직전 15봉의 (고가-저가)/고가 > 2.3% 이상 변동성 필요              
             )
             # 15 분봉
             trade_current_bar_09_pct_strategy(
@@ -1851,10 +1858,11 @@ while True:
                 tp_long_pct=0.015,
                 tp_short_pct=0.01,
                 min_volatility=0.0025,
-                current_bar_pct=0.009,
+                current_bar_pct=0.008,
                 price_diff_pct=0.003,
                 rsi_raise_pct=0.02,  # 직전봉의 rsi를 보기 때문에 2% 높게 설정
-                rsi_drop_pct=0.02   # 직전봉의 rsi를 보기 때문에 2% 높게 설정
+                rsi_drop_pct=0.02,   # 직전봉의 rsi를 보기 때문에 2% 높게 설정
+                range_volatility_pct=0.023                
             )
 
         time.sleep(23)  # 25 초 간격
