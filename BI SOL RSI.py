@@ -120,12 +120,22 @@ def get_available_usdt():
     return float(balance.get('free', {}).get('USDT', 0))
 
 
-def set_margin_and_leverage(symbol):
-    """지정 심볼을 isolated 마진으로 설정하고 레버리지를 적용"""
-    exchange.load_markets()
-    exchange.set_margin_mode('isolated', symbol)
-    exchange.set_leverage(LEVERAGE, symbol)
+# def set_margin_and_leverage(symbol):
+#     """지정 심볼을 isolated 마진으로 설정하고 레버리지를 적용"""
+#     exchange.load_markets()
+#     exchange.set_margin_mode('isolated', symbol)
+#     exchange.set_leverage(LEVERAGE, symbol)
 
+def set_margin_and_leverage(symbol):
+    exchange.load_markets()
+    
+    # 포지션 보유 중엔 마진 변경 불가 → 무시하고 진행
+    try:
+        exchange.set_margin_mode('isolated', symbol)
+    except Exception as e:
+        print(f"[{symbol}] 마진 모드 변경 스킵 (포지션 보유 중): {e}")
+    
+    exchange.set_leverage(LEVERAGE, symbol)
 
 def place_tp_long(symbol, qty, tp_price):
     """롱 포지션용 TAKE_PROFIT_MARKET 주문 생성"""
