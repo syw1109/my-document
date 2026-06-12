@@ -483,7 +483,10 @@ def get_confirmed_candles_with_rsi(symbol, timeframe, count=100, rsi_length=14):
 
 # ===================== RSI 다이버전스 판단 =====================
 
-def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003):
+# def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003):
+    
+def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003, price_diff_pct=0.003):
+        
     """
     상승 다이버전스 조건 판단:
     - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
@@ -502,7 +505,8 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
     lowest_low = base_15['low'].min()
     lowest_rsi = base_15['rsi'].min()
 
-    cond_price      = prev_candle['close'] < lowest_low
+  
+    cond_price      = prev_candle['close'] < lowest_low* (1 - price_diff_pct) 
     cond_rsi        = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
     cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
@@ -523,7 +527,7 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
     }
 
 
-def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003):
+def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003, price_diff_pct=0.003):
     """
     하락 다이버전스 조건 판단:
     - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
@@ -542,7 +546,7 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
     highest_high = base_15['high'].max()
     highest_rsi  = base_15['rsi'].max()
 
-    cond_price      = prev_candle['close'] > highest_high
+    cond_price      = prev_candle['close'] > highest_high * (1 + price_diff_pct)
     cond_rsi        = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
     cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
@@ -566,7 +570,7 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
 # ===================== 공통 RSI 전략 실행 =====================
 
 
-def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003):
+def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003, price_diff_pct=0.003):
     """공통 RSI 다이버전스 전략 실행 함수"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
     
@@ -618,13 +622,15 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, 
         symbol=symbol,
         timeframe=timeframe,
         rsi_raise_pct=0.003,
-        min_volatility=min_volatility
+        min_volatility=min_volatility,
+        price_diff_pct=price_diff_pct  # ← 추가
     )
     bear = analyze_bearish_divergence(
         symbol=symbol,
         timeframe=timeframe,
         rsi_drop_pct=0.003,
-        min_volatility=min_volatility
+        min_volatility=min_volatility,
+        price_diff_pct=price_diff_pct  # ← 추가
     )
 
 
@@ -1703,27 +1709,30 @@ while True:
             if not has_position(MARKET_ID_SOL):
                 trade_once_sol()
 
-        # 1 시간봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='1h',
-                tp_long_pct=0.02,
-                tp_short_pct=0.015,
-                min_volatility=0.0025
-            )
+    # 1시간봉 전략
+    if not has_position(MARKET_ID_SOL):
+        trade_rsi_strategy(
+            symbol=SOL_SYMBOL,
+            market_id=MARKET_ID_SOL,
+            timeframe='1h',
+            tp_long_pct=0.02,
+            tp_short_pct=0.015,
+            min_volatility=0.0025,
+            price_diff_pct=0.003  # ← 추가
+        )
 
-        # 15 분봉 전략 (SOL)
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m',
-                tp_long_pct=0.02,
-                tp_short_pct=0.015,
-                min_volatility=0.002
-            )
+    # 15분봉 전략
+    if not has_position(MARKET_ID_SOL):
+        trade_rsi_strategy(
+            symbol=SOL_SYMBOL,
+            market_id=MARKET_ID_SOL,
+            timeframe='15m',
+            tp_long_pct=0.02,
+            tp_short_pct=0.015,
+            min_volatility=0.002,
+            price_diff_pct=0.003  # ← 추가
+        )
+
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
