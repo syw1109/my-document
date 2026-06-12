@@ -1709,29 +1709,29 @@ while True:
             if not has_position(MARKET_ID_SOL):
                 trade_once_sol()
 
-    # 1시간봉 전략
-    if not has_position(MARKET_ID_SOL):
-        trade_rsi_strategy(
-            symbol=SOL_SYMBOL,
-            market_id=MARKET_ID_SOL,
-            timeframe='1h',
-            tp_long_pct=0.02,
-            tp_short_pct=0.015,
-            min_volatility=0.0025,
-            price_diff_pct=0.003  # ← 추가
-        )
+        # 1시간봉 전략
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='1h',
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
+                min_volatility=0.0025,
+                price_diff_pct=0.003  # ← 추가
+            )
 
-    # 15분봉 전략
-    if not has_position(MARKET_ID_SOL):
-        trade_rsi_strategy(
-            symbol=SOL_SYMBOL,
-            market_id=MARKET_ID_SOL,
-            timeframe='15m',
-            tp_long_pct=0.02,
-            tp_short_pct=0.015,
-            min_volatility=0.002,
-            price_diff_pct=0.003  # ← 추가
-        )
+        # 15분봉 전략
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m',
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
+                min_volatility=0.002,
+                price_diff_pct=0.003  # ← 추가
+            )
 
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
