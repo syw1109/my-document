@@ -584,7 +584,7 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
 # ===================== 공통 RSI 전략 실행 =====================
 
 
-def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.003,min_range_volatility=0.01):
+def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003, price_diff_pct=0.003):
     """공통 RSI 다이버전스 전략 실행 함수"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
     
@@ -611,10 +611,12 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     
     set_margin_and_leverage(symbol)
 
+
     # 이미 해당 심볼 포지션이 있으면 추가 진입 금지
     if has_position(market_id):
         print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
         return
+
 
     # 선물 계좌 사용 가능 USDT 기준으로 주문 수량 계산
     available_usdt = get_available_usdt()
@@ -623,9 +625,11 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
+
     if amount <= 0:
         print(f"[{symbol} {timeframe}] 주문 수량이 0이라서 중단")
         return
+
 
     # 상승/하락 다이버전스 탐색
     bull = analyze_bullish_divergence(
@@ -633,18 +637,20 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         timeframe=timeframe,
         rsi_raise_pct=0.003,
         min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct
+        price_diff_pct=price_diff_pct  # ← 추가
     )
     bear = analyze_bearish_divergence(
         symbol=symbol,
         timeframe=timeframe,
         rsi_drop_pct=0.003,
         min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct
+        price_diff_pct=price_diff_pct  # ← 추가
     )
+
 
     print(f"[{symbol} {timeframe}] BULL={bull}")
     print(f"[{symbol} {timeframe}] BEAR={bear}")
+
 
     # CME 편차 조건: 신호가 있을 때만 확인
     if (bull and bull["signal"]) or (bear and bear["signal"]):
@@ -654,24 +660,30 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
             return
 
+
         prev_close = bull["prev_close"] if (bull and bull["signal"]) else bear["prev_close"]
         deviation = abs(prev_close - cme_price) / cme_price
+
 
         if deviation < 0.01:
             print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
                   f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
             return
 
+
         print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 "
               f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+
 
     # MA18 추세 필터
     trend = ma18_4day_change_trend()
     vol_trend = ma18_6day_volatility_trend()
 
+
     if trend is None or vol_trend is None:
         print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
         return
+
 
     # 업비트 SOL 일봉 시가와 MA18/MA43 비교값 계산
     upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
@@ -679,11 +691,13 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     upbit_today_open = get_upbit_today_open()
     upbit_yesterday_open = get_upbit_yesterday_open()
 
+
     # 어제 시가가 둘 다 위에 있었는지
     yesterday_above_both = (
         upbit_yesterday_open > yesterday_ma18 and
         upbit_yesterday_open > yesterday_ma43
     )
+
 
     # 어제 시가가 둘 다 아래에 있었는지
     yesterday_below_both = (
@@ -691,11 +705,13 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         upbit_yesterday_open < yesterday_ma43
     )
 
+
     # 오늘 시가가 둘 다 위로 돌파했는지
     today_above_both = (
         upbit_today_open > upbit_ma18 and
         upbit_today_open > upbit_ma43
     )
+
 
     # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
     today_below_either = (
@@ -703,29 +719,32 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         upbit_today_open < upbit_ma43
     )
 
+
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
+
     # 롱 신호 처리
     if bull and bull["signal"]:
-        if bull["range_volatility"] < min_range_volatility:
-            print(f"[{symbol} {timeframe}] range_volatility {bull['range_volatility']*100:.2f}% 로 1% 미만이라 롱 진입 금지")
-            return
-
+        # 업비트 조건: 어제 MA 위였는데 오늘 MA 아래로 깨지면 롱 금지
         if yesterday_above_both and today_below_either:
             print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
             return
 
+
+        # MA18 추세 필터
         if trend["down_3days"]:
             print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
             return
+
 
         if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
             print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
             return
 
-        tp_pct = tp_long_pct_2 if bull["range_volatility"] > 0.02 else tp_long_pct
-        tp_price = bull["prev_close"] * (1 + tp_pct)
+
+        # 롱 진입 및 TP 주문
+        tp_price = bull["prev_close"] * (1 + tp_long_pct)
         exchange.create_market_buy_order(symbol, amount)
         
         # ──────────────────────────────────────────────────────────────
@@ -741,28 +760,30 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         print(f"[{symbol} {timeframe}] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
+
     # 숏 신호 처리
     if bear and bear["signal"]:
-        if bear["range_volatility"] < min_range_volatility:
-            print(f"[{symbol} {timeframe}] range_volatility {bear['range_volatility']*100:.2f}% 로 1% 미만이라 숏 진입 금지")
-            return
-
+        # 업비트 조건: 어제 MA 아래였는데 오늘 MA 위로 돌파하면 숏 금지
         if yesterday_below_both and today_above_both:
             print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 돌파로 숏 진입 금지")
             return
 
+
+        # MA18 추세 필터
         if trend["up_3days"]:
             print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
             return
+
 
         if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
             print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
             return
 
-        tp_pct = tp_short_pct_2 if bear["range_volatility"] > 0.02 else tp_short_pct
-        tp_price = bear["prev_close"] * (1 - tp_pct)
-        exchange.create_market_sell_order(symbol, amount)
 
+        # 숏 진입 및 TP 주문
+        tp_price = bear["prev_close"] * (1 - tp_short_pct)
+        exchange.create_market_sell_order(symbol, amount)
+        
         # ──────────────────────────────────────────────────────────────
         # 매수 실행 직후 시간 기록 (쿨다운용)
         # ──────────────────────────────────────────────────────────────
@@ -771,12 +792,14 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_sol_buy_time_1h = time.time()
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
-
+        
         place_tp_short(symbol, amount, tp_price)
         print(f"[{symbol} {timeframe}] 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
+
     print(f"[{symbol} {timeframe}] 진입 조건 없음")
+
 
 
 #---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
@@ -864,7 +887,7 @@ def analyze_bearish_divergence_close(symbol, timeframe, rsi_drop_pct=0.02, min_v
     }
 
 
-def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
+def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
     """close 기준 RSI 다이버전스 전략 실행 함수 (롱 + 숏)"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
 
@@ -1005,8 +1028,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
             return
 
-        tp_pct = tp_long_pct_2 if bull_close["range_volatility"] > 0.02 else tp_long_pct
-        tp_price = bull_close["prev_close"] * (1 + tp_pct)
+        tp_price = bull_close["prev_close"] * (1 + tp_long_pct)
         exchange.create_market_buy_order(symbol, amount)
 
         # ──────────────────────────────────────────────────────────────
@@ -1037,8 +1059,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
             return
 
-        tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
-        tp_price = bear_close["prev_close"] * (1 - tp_pct)
+        tp_price = bear_close["prev_close"] * (1 - tp_short_pct)
         exchange.create_market_sell_order(symbol, amount)
 
         # ──────────────────────────────────────────────────────────────
@@ -1056,6 +1077,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
 
     print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
 
+
 #------ 제약 파괴후 추매 룰
 # 코인 잔고 개수 불러오는 함수 
 def get_position_amount(symbol):
@@ -1068,64 +1090,70 @@ def get_position_amount(symbol):
             return amt
     return 0
 
-
-def trade_rsi_close_strategy_xrp_long(
-    symbol,
-    market_id,
-    timeframe,
-    tp_long_pct,
-    tp_long_pct_2=None,
-    min_volatility=0.003,
-    price_diff_pct=0.001,
-    rsi_raise_pct=0.003,
-    min_range_volatility=0.015
-):
+def trade_rsi_close_strategy_xrp_long(symbol, market_id, timeframe, tp_long_pct, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003):
     """
-    XRP 보유 시 롱 조건만 적용.
-    TP 분기 유지:
-      - range_volatility > 0.018 이면 tp_long_pct_2
-      - 아니면 tp_long_pct
-    진입 제약:
-      - range_volatility >= 0.015 일 때만 진입
+    XRP 보유 시 롱 조건만 적용 (제약룰 무시, CME 조건은 유지)
     """
-    global last_xrp_long_trade_time, last_xrp_long_1h, last_xrp_long_15m
 
+    global last_xrp_long_trade_time, last_xrp_long_1h, last_xrp_long_15m  # 전역 변수 사용 선언
+
+    # ──────────────────────────────────────────────────────────────
+    # 쿨다운 체크 (60 초 이내 진입 금지)
+    # ──────────────────────────────────────────────────────────────
     if time.time() - last_xrp_long_trade_time < 60:
         print(f"[{symbol} XRP_LONG] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_xrp_long_trade_time:.1f}초 경과)")
         return
 
+
+    # ──────────────────────────────────────────────────────────────
+    # timeframe 별 쿨다운 체크 (1 시간봉=60 분, 15 분봉=15 분)
+    # ──────────────────────────────────────────────────────────────
     if timeframe == '1h' and time.time() - last_xrp_long_1h < 3600:
         minutes_ago = (time.time() - last_xrp_long_1h) / 60
         print(f"[{symbol} XRP_LONG 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
         return
+
 
     if timeframe == '15m' and time.time() - last_xrp_long_15m < 900:
         minutes_ago = (time.time() - last_xrp_long_15m) / 60
         print(f"[{symbol} XRP_LONG 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
         return
 
+
     set_margin_and_leverage(symbol)
     current_balance = get_available_usdt()
 
+
+    # 계좌 잔고 제한: 6000~12000 달러 사이일 때만 동작
     if current_balance < 4000 or current_balance > 14000:
         print(f"[{symbol} XRP_LONG] 계좌 잔고 {current_balance:.2f} USD (6000~12000 밖이므로 진입 금지)")
         return
 
+
+    # XRP 포지션 확인
     xrp_position = get_position_amount('XRP/USDT')
     if xrp_position <= 0:
         print(f"[{symbol} XRP_LONG] XRP 포지션 없음 (롱 진입 금지)")
         return
 
+
     n_xrp = abs(xrp_position)
     sol_threshold = 40 * n_xrp
+
+
+    # 현재 SOL 보유량 확인
     sol_position = get_position_amount('SOL/USDT')
     current_sol = sol_position if sol_position > 0 else 0
 
+
     print(f"[{symbol} XRP_LONG] XRP 보유량: {n_xrp}개, SOL 보유량: {current_sol}개, 기준치: {sol_threshold}개")
 
+
+    # SOL 보유량이 기준치 초과하면 매수 금지
     if current_sol > sol_threshold:
         print(f"[{symbol} XRP_LONG] SOL 보유량 {current_sol}개 > 기준 {sol_threshold}개로 매수 금지")
         return
+
 
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     available_usdt = get_available_usdt()
@@ -1133,10 +1161,13 @@ def trade_rsi_close_strategy_xrp_long(
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
+
     if amount <= 0:
         print(f"[{symbol} XRP_LONG] 주문 수량이 0 이라서 중단")
         return
 
+
+    # rsi_raise_pct, price_diff_pct 모두 숫자 직접 입력
     bull_close = analyze_bullish_divergence_close(
         symbol=symbol,
         timeframe=timeframe,
@@ -1145,102 +1176,123 @@ def trade_rsi_close_strategy_xrp_long(
         price_diff_pct=price_diff_pct
     )
 
+
     print(f"[{symbol} XRP_LONG] BULL_CLOSE={bull_close}")
 
-    if not bull_close or not bull_close["signal"]:
-        print(f"[{symbol} XRP_LONG] CLOSE 기준 진입 조건 없음")
+
+    # CME 편차 조건
+    if bull_close and bull_close["signal"]:
+        try:
+            cme_price = get_last_saturday_6_close()
+        except Exception as e:
+            print(f"[{symbol} XRP_LONG] 토요일 06:00 가격 조회 실패: {e}")
+            return
+
+
+        deviation = abs(bull_close["prev_close"] - cme_price) / cme_price
+        if deviation < 0.01:
+            print(f"[{symbol} XRP_LONG] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
+                  f"| CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
+            return
+
+
+        print(f"[{symbol} XRP_LONG] CME 편차 {deviation*100:.2f}% 충족 "
+              f"| CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
+
+
+    # 롱 진입 (제약룰 무시)
+    if bull_close and bull_close["signal"]:
+
+
+        # ✅ 첫 매매 (SOL 0 개) → TP 걸기, 추가 매수 (SOL > 0 개) → TP 안 걸기
+        if current_sol == 0:
+            tp_price = bull_close["prev_close"] * (1 + tp_long_pct)
+            exchange.create_market_buy_order(symbol, amount)
+
+
+            last_xrp_long_trade_time = time.time()
+            if timeframe == '1h':
+                last_xrp_long_1h = time.time()
+            elif timeframe == '15m':
+                last_xrp_long_15m = time.time()
+
+
+            place_tp_long(symbol, amount, tp_price)
+            print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price}")
+        else:
+            exchange.create_market_buy_order(symbol, amount)
+
+
+            last_xrp_long_trade_time = time.time()
+            if timeframe == '1h':
+                last_xrp_long_1h = time.time()
+            elif timeframe == '15m':
+                last_xrp_long_15m = time.time()
+
+
+            print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
         return
 
-    if bull_close["range_volatility"] < min_range_volatility:
-        print(f"[{symbol} XRP_LONG] range_volatility {bull_close['range_volatility']*100:.2f}% 미만으로 진입 금지")
-        return
 
-    try:
-        cme_price = get_last_saturday_6_close()
-    except Exception as e:
-        print(f"[{symbol} XRP_LONG] 토요일 06:00 가격 조회 실패: {e}")
-        return
-
-    deviation = abs(bull_close["prev_close"] - cme_price) / cme_price
-    if deviation < 0.01:
-        print(f"[{symbol} XRP_LONG] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
-        return
-
-    print(f"[{symbol} XRP_LONG] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={bull_close['prev_close']:.2f}")
-
-    tp_pct = tp_long_pct_2 if (tp_long_pct_2 is not None and bull_close["range_volatility"] > 0.018) else tp_long_pct
-    tp_price = bull_close["prev_close"] * (1 + tp_pct)
-
-    exchange.create_market_buy_order(symbol, amount)
-
-    last_xrp_long_trade_time = time.time()
-    if timeframe == '1h':
-        last_xrp_long_1h = time.time()
-    elif timeframe == '15m':
-        last_xrp_long_15m = time.time()
-
-    if current_sol == 0:
-        place_tp_long(symbol, amount, tp_price)
-        print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
-    else:
-        print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
+    print(f"[{symbol} XRP_LONG] CLOSE 기준 진입 조건 없음")
 
 
-
-def trade_rsi_close_strategy_ada_short(
-    symbol,
-    market_id,
-    timeframe,
-    tp_short_pct,
-    tp_short_pct_2=None,
-    min_volatility=0.003,
-    price_diff_pct=0.001,
-    rsi_drop_pct=0.003,
-    min_range_volatility=0.015
-):
+def trade_rsi_close_strategy_ada_short(symbol, market_id, timeframe, tp_short_pct, min_volatility=0.003, price_diff_pct=0.001, rsi_drop_pct=0.003):
     """
-    ADA 보유 시 숏 조건만 적용.
-    TP 분기 유지:
-      - range_volatility > 0.018 이면 tp_short_pct_2
-      - 아니면 tp_short_pct
-    진입 제약:
-      - range_volatility >= 0.015 일 때만 진입
+    ADA 보유 시 숏 조건만 적용 (제약룰 무시, CME 조건은 유지)
     """
-    global last_ada_short_trade_time, last_ada_short_1h, last_ada_short_15m
 
+    global last_ada_short_trade_time, last_ada_short_1h, last_ada_short_15m  # 전역 변수 사용 선언
+
+    # ──────────────────────────────────────────────────────────────
+    # 쿨다운 체크 (60 초 이내 진입 금지)
+    # ──────────────────────────────────────────────────────────────
     if time.time() - last_ada_short_trade_time < 60:
         print(f"[{symbol} ADA_SHORT] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_ada_short_trade_time:.1f}초 경과)")
         return
 
+    # ──────────────────────────────────────────────────────────────
+    # timeframe 별 쿨다운 체크 (1 시간봉=60 분, 15 분봉=15 분)
+    # ──────────────────────────────────────────────────────────────
     if timeframe == '1h' and time.time() - last_ada_short_1h < 3600:
         minutes_ago = (time.time() - last_ada_short_1h) / 60
         print(f"[{symbol} ADA_SHORT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
         return
+
 
     if timeframe == '15m' and time.time() - last_ada_short_15m < 900:
         minutes_ago = (time.time() - last_ada_short_15m) / 60
         print(f"[{symbol} ADA_SHORT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
         return
 
+
     set_margin_and_leverage(symbol)
+
     current_balance = get_available_usdt()
 
+    # 계좌 잔고 제한: 6000~12000 달러 사이일 때만 동작
     if current_balance < 4000 or current_balance > 14000:
         print(f"[{symbol} ADA_SHORT] 계좌 잔고 {current_balance:.2f} USD (6000~12000 밖이므로 진입 금지)")
         return
 
+
+    # ADA 포지션 확인
     ada_position = get_position_amount('ADA/USDT')
-    if ada_position >= 0:
+    if ada_position >= 0:  # 숏 포지션은 음수
         print(f"[{symbol} ADA_SHORT] ADA 숏 포지션 없음 (숏 진입 금지)")
         return
 
+
     n_ada = abs(ada_position)
     sol_threshold = 7 * n_ada
+
+    # 현재 SOL 보유량 확인
     sol_position = get_position_amount('SOL/USDT')
-    current_sol = -sol_position if sol_position < 0 else 0
+    current_sol = -sol_position if sol_position < 0 else 0  # 숏이면 양수로 변환
 
     print(f"[{symbol} ADA_SHORT] ADA 숏 보유량: {n_ada}개, SOL 숏 보유량: {current_sol}개, 기준치: {sol_threshold}개")
 
+    # SOL 보유량이 기준치 초과하면 매수 금지
     if current_sol > sol_threshold:
         print(f"[{symbol} ADA_SHORT] SOL 숏 보유량 {current_sol}개 > 기준 {sol_threshold}개로 매수 금지")
         return
@@ -1255,6 +1307,7 @@ def trade_rsi_close_strategy_ada_short(
         print(f"[{symbol} ADA_SHORT] 주문 수량이 0 이라서 중단")
         return
 
+    # rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
     bear_close = analyze_bearish_divergence_close(
         symbol=symbol,
         timeframe=timeframe,
@@ -1265,43 +1318,56 @@ def trade_rsi_close_strategy_ada_short(
 
     print(f"[{symbol} ADA_SHORT] BEAR_CLOSE={bear_close}")
 
-    if not bear_close or not bear_close["signal"]:
-        print(f"[{symbol} ADA_SHORT] CLOSE 기준 진입 조건 없음")
+    # CME 편차 조건
+    if bear_close and bear_close["signal"]:
+        try:
+            cme_price = get_last_saturday_6_close()
+        except Exception as e:
+            print(f"[{symbol} ADA_SHORT] 토요일 06:00 가격 조회 실패: {e}")
+            return
+
+        deviation = abs(bear_close["prev_close"] - cme_price) / cme_price
+        if deviation < 0.01:
+            print(f"[{symbol} ADA_SHORT] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
+                  f"| CME={cme_price:.2f}, prev_close={bear_close['prev_close']:.2f}")
+            return
+
+        print(f"[{symbol} ADA_SHORT] CME 편차 {deviation*100:.2f}% 충족 "
+              f"| CME={cme_price:.2f}, prev_close={bear_close['prev_close']:.2f}")
+
+
+    # 숏 진입 (제약룰 무시)
+    if bear_close and bear_close["signal"]:
+
+
+        # ✅ 첫 매매 (SOL 0 개) → TP 걸기, 추가 매수 (SOL > 0 개) → TP 안 걸기
+        if current_sol == 0:
+            tp_price = bear_close["prev_close"] * (1 - tp_short_pct)
+            exchange.create_market_sell_order(symbol, amount)
+
+            last_ada_short_trade_time = time.time()
+            if timeframe == '1h':
+                last_ada_short_1h = time.time()
+            elif timeframe == '15m':
+                last_ada_short_15m = time.time()
+
+            place_tp_short(symbol, amount, tp_price)
+            print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price}")
+        else:
+            exchange.create_market_sell_order(symbol, amount)
+
+            last_ada_short_trade_time = time.time()
+            if timeframe == '1h':
+                last_ada_short_1h = time.time()
+            elif timeframe == '15m':
+                last_ada_short_15m = time.time()
+
+            print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
         return
 
-    if bear_close["range_volatility"] < min_range_volatility:
-        print(f"[{symbol} ADA_SHORT] range_volatility {bear_close['range_volatility']*100:.2f}% 미만으로 진입 금지")
-        return
+    print(f"[{symbol} ADA_SHORT] CLOSE 기준 진입 조건 없음")
 
-    try:
-        cme_price = get_last_saturday_6_close()
-    except Exception as e:
-        print(f"[{symbol} ADA_SHORT] 토요일 06:00 가격 조회 실패: {e}")
-        return
 
-    deviation = abs(bear_close["prev_close"] - cme_price) / cme_price
-    if deviation < 0.01:
-        print(f"[{symbol} ADA_SHORT] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={bear_close['prev_close']:.2f}")
-        return
-
-    print(f"[{symbol} ADA_SHORT] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={bear_close['prev_close']:.2f}")
-
-    tp_pct = tp_short_pct_2 if (tp_short_pct_2 is not None and bear_close["range_volatility"] > 0.018) else tp_short_pct
-    tp_price = bear_close["prev_close"] * (1 - tp_pct)
-
-    exchange.create_market_sell_order(symbol, amount)
-
-    last_ada_short_trade_time = time.time()
-    if timeframe == '1h':
-        last_ada_short_1h = time.time()
-    elif timeframe == '15m':
-        last_ada_short_15m = time.time()
-
-    if current_sol == 0:
-        place_tp_short(symbol, amount, tp_price)
-        print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
-    else:
-        print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
 
 # 도지 전략 추가, 급락 후 rsi, close diff pct 완화해서 사용하는 목적
 def trade_rsi_close_strategy_doge(symbol, market_id, timeframe, tp_long_pct, tp_short_pct, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
@@ -1689,15 +1755,6 @@ last_sol_trade_time = 0  # 마지막 SOL 체결 시간 (60 초 쿨다운용)
 last_sol_buy_time_1h = 0  # 마지막 SOL 1 시간봉 매수 시간 (60 분 쿨다운용)
 last_sol_buy_time_15m = 0  # 마지막 SOL 15 분봉 매수 시간 (15 분 쿨다운용)
 
-last_xrp_long_trade_time = 0
-last_xrp_long_1h = 0
-last_xrp_long_15m = 0
-
-last_ada_short_trade_time = 0
-last_ada_short_1h = 0
-last_ada_short_15m = 0
-
-
 while True:
     try:
         now = now_kst()
@@ -1709,22 +1766,16 @@ while True:
                 trade_once_sol()
 
         # 1시간봉 전략
-        
         if not has_position(MARKET_ID_SOL):
             trade_rsi_strategy(
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.014, # 일반 익절률
-                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
-                tp_short_pct=0.01, 
-                tp_short_pct_2=0.015, # 변동성 2% 이상 익절률
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0025,
-                price_diff_pct=0.0005,
-                min_range_volatility=0.01 #15봉 변동성 1% 미만시 진입 금지 
+                price_diff_pct=0.0005  # ← 추가
             )
-            
-
 
         # 15분봉 전략
         if not has_position(MARKET_ID_SOL):
@@ -1732,13 +1783,10 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.015, # 일반 익절률
-                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
-                tp_short_pct=0.01, 
-                tp_short_pct_2=0.015, # 변동성 2% 이상
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.002,
-                price_diff_pct=0.0005,  # ← 추가
-                min_range_volatility=0.01   #15봉 변동성 1% 미만시 진입 금지             
+                price_diff_pct=0.0005  # ← 추가
             )
 
 
@@ -1749,16 +1797,13 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.014,
-                tp_long_pct_2=0.02,
-                tp_short_pct=0.01,
-                tp_short_pct_2=0.015,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0025,
                 price_diff_pct=0.003,
                 rsi_raise_pct=0.003, # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자
-                rsi_drop_pct=0.003 # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자
+                rsi_drop_pct=0.003  # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자
             )
-
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 15 분봉)
         if not has_position(MARKET_ID_SOL):
@@ -1766,10 +1811,8 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.014,
-                tp_long_pct_2=0.02,
-                tp_short_pct=0.01,
-                tp_short_pct_2=0.015,
+                tp_long_pct=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0015,
                 price_diff_pct=0.003,
                 rsi_raise_pct=0.003, # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 작게 가져가자
@@ -1784,29 +1827,25 @@ while True:
         # XRP 보유 시 롱 전용
         xrp_position = get_position_amount('XRP/USDT')
         if xrp_position > 0:
-            # 1 시간봉           
+            # 1 시간봉
             trade_rsi_close_strategy_xrp_long(
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_long_pct=0.012,
-                tp_long_pct_2=0.02,
+                tp_long_pct=0.02,
                 min_volatility=0.0025,
                 price_diff_pct=0.003,
-                rsi_raise_pct=0.01,
-                min_range_volatility=0.015         # 15봉 1.5% 변동성 없으면 무진입        
-            )            
+                rsi_raise_pct=0.01  # 매수 제약룰이 없고 하락장일거란 말이지. 그러니깐 변동성이 크니깐 rsi 제약 크게 가져가자 1%
+            )
             # 15 분봉
             trade_rsi_close_strategy_xrp_long(
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.012,
-                tp_long_pct_2=0.02,
+                tp_long_pct=0.02,
                 min_volatility=0.002,
                 price_diff_pct=0.003,
-                rsi_raise_pct=0.01,  # 매수 제약룰이 없고 하락장일거란 말이지. 그러니깐 변동성이 크니깐 rsi 제약 크게 가져가자 1%
-                min_range_volatility=0.015   # 15봉 1.5% 변동성 없으면 무진입              
+                rsi_raise_pct=0.01  # 매수 제약룰이 없고 하락장일거란 말이지. 그러니깐 변동성이 크니깐 rsi 제약 크게 가져가자 1%
             )
 
         # ADA 보유 시 숏 전용
@@ -1817,24 +1856,20 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='1h',
-                tp_short_pct=0.012,
-                tp_short_pct_2=0.02,
+                tp_short_pct=0.015,
                 min_volatility=0.0025,
                 price_diff_pct=0.003,
-                rsi_drop_pct=0.01,
-                min_range_volatility=0.015                
+                rsi_drop_pct=0.01
             )
             # 15 분봉
             trade_rsi_close_strategy_ada_short(
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_short_pct=0.012,
-                tp_short_pct_2=0.02,
-                min_volatility=0.002,                
+                tp_short_pct=0.015,
+                min_volatility=0.002,
                 price_diff_pct=0.003,
-                rsi_drop_pct=0.01,
-                min_range_volatility=0.015                
+                rsi_drop_pct=0.01
             )
 
         # DOGE 보유 시 롱 + 숏 전용 (SOL 포지션 있으면 진입 금지)
