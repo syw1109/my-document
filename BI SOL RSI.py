@@ -69,8 +69,23 @@
 # 26/6/10
 # 도지룰 RSI, CLOSE 값 기준 완화. 더 잦은 매매목적
 # LINK 룰 현재봉 기준 0.9% 이상 변동성+직전 lowest/highest close값 대비 0.3% 이상 변동성, 직전봉 RSI가 2% 이상 변동성 가질때 진입. 단타 목적, 직전15봉의 변동성 2.3%이상
-# + 추가하려는 전략
 
+#6/15
+# xrp,ada close 룰, 하락장에서 롱진입전략은 직전 15봉 1.5% 변동성 있을때만 진입 
+# high, low룰 , 15봉 변동성 1% 변동성 있을때만 진입 
+# 전체 전략 15봉 변동 %에 따라 익절률 다르게 2% 미만시 익절 % 1.4%, 2% 변동성있을시 2% 익절률
+# xrp, ada전략 추매 타이밍 증가 15분봉 -> 30분 이내 거래 미존재, 1시간봉은 2시간 이내 거래 미존재
+
+#6/20 리스크 헷지
+# 7% 손절 SL 주문 추가. 기존 수량있을시 tp 안거는데, 2차주문시 2차진입 기준의 tp 로  주문 수정. sl 은 최초 그대로 유지
+# 5배 -> 10배 수정, 몇시간 만에 10% 이상 하락하는 경우가 1년에 2~3번 있어서, 5배로 하면 4000불 손실이라서 10배로 수정. 7% 손절 걸면 상관없는거 아닌가? 그래서 다시 5배 유지 
+# cme룰 목요일도 추가
+
+
+# + 추가하려는 전략
+# 5캔들안에 다이버 있었는지 확인하고 1% 하락된 가격으로 진입하는 조건? 최초 다이버 이후 바로 진입될까봐 걱정, → 요건 ticker xrp 말고 다른거로 하면 되겠다.
+# 추매 후 추매 물량은 tp기준으로 털고 싶은데, 그렇게 하자니 폭락시에 다 뚜드려 맞을까봐 무섭네. 차라리 7% SL이면 추가 손실은 없을거자나.
+# 7% 하락하는 경우가 많이 없으니, 손절 나가면 그럴땐 그냥 2600달러 뚜두려 맞고 끝내고, 다음 abc 노리면 되지 않을까.
 
 import time
 import datetime
@@ -166,6 +181,22 @@ def place_tp_short(symbol, qty, tp_price):
         }
     )
 
+# 손절 SL 주문 추가
+def place_sl_long(symbol, amount, sl_price):
+    params = {
+        'stopPrice': sl_price,
+        'reduceOnly': True,
+        'workingType': 'MARK_PRICE'
+    }
+    return exchange.create_order(symbol, 'STOP_MARKET', 'sell', amount, None, params)
+
+def place_sl_short(symbol, amount, sl_price):
+    params = {
+        'stopPrice': sl_price,
+        'reduceOnly': True,
+        'workingType': 'MARK_PRICE'
+    }
+    return exchange.create_order(symbol, 'STOP_MARKET', 'buy', amount, None, params)
 
 def has_position(symbol_market_id):
     """지정한 심볼의 포지션 보유 여부 확인"""
@@ -314,8 +345,8 @@ def trade_once_sol():
     set_margin_and_leverage(SOL_SYMBOL)
 
     now = now_kst()
-    if now.weekday() in [3, 4, 5]:
-        print("목요일/금요일/토요일은 매매 금지")
+    if now.weekday() in [4, 5]: # 3: 목, 4: 금, 5:토, 목요일은 거래 재개
+        print("금요일/토요일은 매매 금지")
         return
 
     if has_position(MARKET_ID_SOL):
@@ -369,6 +400,9 @@ def trade_once_sol():
 
     tp_price_long  = current_price * 1.0105
     tp_price_short = current_price * 0.99
+    
+    sl_price_long  = current_price * 0.93 
+    sl_price_short = current_price * 1.07   
 
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
@@ -391,6 +425,7 @@ def trade_once_sol():
 
         exchange.create_market_buy_order(SOL_SYMBOL, amount)
         place_tp_long(SOL_SYMBOL, amount, tp_price_long)
+        place_sl_long(SOL_SYMBOL, amount, sl_price_long)        
         print(f"롱 진입 | amount={amount} | price={current_price} | tp={tp_price_long}")
         return
 
@@ -407,6 +442,7 @@ def trade_once_sol():
 
         exchange.create_market_sell_order(SOL_SYMBOL, amount)
         place_tp_short(SOL_SYMBOL, amount, tp_price_short)
+        place_sl_short(SOL_SYMBOL, amount, sl_price_short)        
         print(f"숏 진입 | amount={amount} | price={current_price} | tp={tp_price_short}")
         return
 
@@ -501,13 +537,14 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
 
     prev_candle = df.iloc[-1]       # 직전 확정봉
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
+    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
 
     lowest_low = base_15['low'].min()
     lowest_rsi = base_15['rsi'].min()
     
     # ✅ 추가
-    range_high = base_15['close'].max()
-    range_low  = base_15['close'].min()
+    range_high = base_16['close'].max()
+    range_low  = base_16['close'].min()
     range_volatility = (range_high - range_low) / range_high    
 
   
@@ -548,15 +585,15 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
 
     prev_candle = df.iloc[-1]
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-
+    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함. 15봉 변동성 보는 목적
 
 
     highest_high = base_15['high'].max()
     highest_rsi  = base_15['rsi'].max()
     
     # ✅ 추가
-    range_high = base_15['close'].max()
-    range_low  = base_15['close'].min()
+    range_high = base_16['close'].max()
+    range_low  = base_16['close'].min()
     range_volatility = (range_high - range_low) / range_high    
 
     cond_price      = prev_candle['close'] > highest_high * (1 + price_diff_pct)
@@ -631,14 +668,14 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     bull = analyze_bullish_divergence(
         symbol=symbol,
         timeframe=timeframe,
-        rsi_raise_pct=0.003,
+        rsi_raise_pct=0.001, # 라운드 피규어 직전 직전봉(2번째봉) 제외하면 급락후 급등하는 차트에서 2번째 봉 제외하면 rsi 다이버 뜨는 경우가 종종있음. 그떄 rsi가 거의 차이가 없어서 가격차이만 있어도 되겠다고 싶음.
         min_volatility=min_volatility,
         price_diff_pct=price_diff_pct
     )
     bear = analyze_bearish_divergence(
         symbol=symbol,
         timeframe=timeframe,
-        rsi_drop_pct=0.003,
+        rsi_drop_pct=0.001,
         min_volatility=min_volatility,
         price_diff_pct=price_diff_pct
     )
@@ -706,6 +743,9 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
+    # 손절 주문 7%
+    sl_pct = 0.07
+    
     # 롱 신호 처리
     if bull and bull["signal"]:
         if bull["range_volatility"] < min_range_volatility:
@@ -726,6 +766,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
 
         tp_pct = tp_long_pct_2 if bull["range_volatility"] > 0.02 else tp_long_pct
         tp_price = bull["prev_close"] * (1 + tp_pct)
+        sl_price = bull["prev_close"] * (1 - sl_pct)
         exchange.create_market_buy_order(symbol, amount)
         
         # ──────────────────────────────────────────────────────────────
@@ -738,6 +779,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_sol_buy_time_15m = time.time()
         
         place_tp_long(symbol, amount, tp_price)
+        place_sl_long(symbol, amount, sl_price)
         print(f"[{symbol} {timeframe}] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -761,6 +803,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
 
         tp_pct = tp_short_pct_2 if bear["range_volatility"] > 0.02 else tp_short_pct
         tp_price = bear["prev_close"] * (1 - tp_pct)
+        sl_price = bear["prev_close"] * (1 + sl_pct)
         exchange.create_market_sell_order(symbol, amount)
 
         # ──────────────────────────────────────────────────────────────
@@ -773,6 +816,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_sol_buy_time_15m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
+        place_sl_short(symbol, amount, sl_price)
         print(f"[{symbol} {timeframe}] 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -791,13 +835,14 @@ def analyze_bullish_divergence_close(symbol, timeframe, rsi_raise_pct=0.02, min_
 
     prev_candle = df.iloc[-1]  # 직전봉 1
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
+    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
 
     lowest_close = base_15['close'].min()
     lowest_rsi = base_15['rsi'].min()
     
     # ✅ 추가
-    range_high = base_15['close'].max()
-    range_low  = base_15['close'].min()
+    range_high = base_16['close'].max()
+    range_low  = base_16['close'].min()
     range_volatility = (range_high - range_low) / range_high    
 
     cond_price = prev_candle['close'] < lowest_close * (1 - price_diff_pct)
@@ -832,14 +877,15 @@ def analyze_bearish_divergence_close(symbol, timeframe, rsi_drop_pct=0.02, min_v
         return None
 
     prev_candle = df.iloc[-1]  # 직전봉 1
-    base_14 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
+    base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
+    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
 
-    highest_close = base_14['close'].max()
-    highest_rsi = base_14['rsi'].max()
+    highest_close = base_15['close'].max()
+    highest_rsi = base_15['rsi'].max()
     
     # ✅ 추가
-    range_high = base_14['close'].max()
-    range_low  = base_14['close'].min()
+    range_high = base_16['close'].max()
+    range_low  = base_16['close'].min()
     range_volatility = (range_high - range_low) / range_high    
 
     cond_price = prev_candle['close'] > highest_close * (1 + price_diff_pct)
@@ -990,6 +1036,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
+    sl_pct = 0.07
     # 롱 신호 처리
     if bull_close and bull_close["signal"]:
         # 업비트 조건: 어제 MA 위였는데 오늘 MA 아래로 깨지면 롱 금지
@@ -1007,6 +1054,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
 
         tp_pct = tp_long_pct_2 if bull_close["range_volatility"] > 0.02 else tp_long_pct
         tp_price = bull_close["prev_close"] * (1 + tp_pct)
+        sl_price = bull_close["prev_close"] * (1 - sl_pct)
         exchange.create_market_buy_order(symbol, amount)
 
         # ──────────────────────────────────────────────────────────────
@@ -1019,6 +1067,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             last_sol_buy_time_15m = time.time()
 
         place_tp_long(symbol, amount, tp_price)
+        place_sl_long(symbol, amount, sl_price)
         print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -1039,6 +1088,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
 
         tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
         tp_price = bear_close["prev_close"] * (1 - tp_pct)
+        sl_price = bear_close["prev_close"] * (1 + sl_pct)
         exchange.create_market_sell_order(symbol, amount)
 
         # ──────────────────────────────────────────────────────────────
@@ -1051,6 +1101,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             last_sol_buy_time_15m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
+        place_sl_short(symbol, amount, sl_price)        
         print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -1094,20 +1145,20 @@ def trade_rsi_close_strategy_xrp_long(
         print(f"[{symbol} XRP_LONG] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_xrp_long_trade_time:.1f}초 경과)")
         return
 
-    if timeframe == '1h' and time.time() - last_xrp_long_1h < 3600:
+    if timeframe == '1h' and time.time() - last_xrp_long_1h < 10800:
         minutes_ago = (time.time() - last_xrp_long_1h) / 60
-        print(f"[{symbol} XRP_LONG 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
+        print(f"[{symbol} XRP_LONG 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
         return
 
-    if timeframe == '15m' and time.time() - last_xrp_long_15m < 900:
+    if timeframe == '15m' and time.time() - last_xrp_long_15m < 2700:
         minutes_ago = (time.time() - last_xrp_long_15m) / 60
-        print(f"[{symbol} XRP_LONG 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
+        print(f"[{symbol} XRP_LONG 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
 
     set_margin_and_leverage(symbol)
     current_balance = get_available_usdt()
 
-    if current_balance < 4000 or current_balance > 14000:
+    if current_balance < 5500 or current_balance > 12000:
         print(f"[{symbol} XRP_LONG] 계좌 잔고 {current_balance:.2f} USD (6000~12000 밖이므로 진입 금지)")
         return
 
@@ -1170,7 +1221,7 @@ def trade_rsi_close_strategy_xrp_long(
 
     tp_pct = tp_long_pct_2 if (tp_long_pct_2 is not None and bull_close["range_volatility"] > 0.018) else tp_long_pct
     tp_price = bull_close["prev_close"] * (1 + tp_pct)
-
+    sl_price = bull_close["prev_close"] * (1 - 0.07)
     exchange.create_market_buy_order(symbol, amount)
 
     last_xrp_long_trade_time = time.time()
@@ -1179,8 +1230,10 @@ def trade_rsi_close_strategy_xrp_long(
     elif timeframe == '15m':
         last_xrp_long_15m = time.time()
 
+
     if current_sol == 0:
         place_tp_long(symbol, amount, tp_price)
+        place_sl_long(symbol, amount, sl_price)    
         print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
     else:
         print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
@@ -1212,14 +1265,14 @@ def trade_rsi_close_strategy_ada_short(
         print(f"[{symbol} ADA_SHORT] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_ada_short_trade_time:.1f}초 경과)")
         return
 
-    if timeframe == '1h' and time.time() - last_ada_short_1h < 3600:
+    if timeframe == '1h' and time.time() - last_ada_short_1h < 10800:
         minutes_ago = (time.time() - last_ada_short_1h) / 60
-        print(f"[{symbol} ADA_SHORT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
+        print(f"[{symbol} ADA_SHORT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
         return
 
-    if timeframe == '15m' and time.time() - last_ada_short_15m < 900:
+    if timeframe == '15m' and time.time() - last_ada_short_15m < 2700:
         minutes_ago = (time.time() - last_ada_short_15m) / 60
-        print(f"[{symbol} ADA_SHORT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
+        print(f"[{symbol} ADA_SHORT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
 
     set_margin_and_leverage(symbol)
@@ -1288,7 +1341,7 @@ def trade_rsi_close_strategy_ada_short(
 
     tp_pct = tp_short_pct_2 if (tp_short_pct_2 is not None and bear_close["range_volatility"] > 0.018) else tp_short_pct
     tp_price = bear_close["prev_close"] * (1 - tp_pct)
-
+    sl_price = bear_close["prev_close"] * (1 + 0.07)
     exchange.create_market_sell_order(symbol, amount)
 
     last_ada_short_trade_time = time.time()
@@ -1299,6 +1352,7 @@ def trade_rsi_close_strategy_ada_short(
 
     if current_sol == 0:
         place_tp_short(symbol, amount, tp_price)
+        place_sl_short(symbol, amount, sl_price)
         print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
     else:
         print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
@@ -1732,7 +1786,7 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='15m',
-                tp_long_pct=0.015, # 일반 익절률
+                tp_long_pct=0.014, # 일반 익절률
                 tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
                 tp_short_pct=0.01, 
                 tp_short_pct_2=0.015, # 변동성 2% 이상
@@ -1771,7 +1825,7 @@ while True:
                 tp_short_pct=0.01,
                 tp_short_pct_2=0.015,
                 min_volatility=0.0015,
-                price_diff_pct=0.003,
+                price_diff_pct=0.003, # 0.2% 로 바꾸면 노이즈 많이 낄려나?
                 rsi_raise_pct=0.003, # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 작게 가져가자
                 rsi_drop_pct=0.003  # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자 0.3%
             )
