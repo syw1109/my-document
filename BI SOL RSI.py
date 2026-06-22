@@ -182,21 +182,21 @@ def place_tp_short(symbol, qty, tp_price):
     )
 
 # 손절 SL 주문 추가
-def place_sl_long(symbol, amount, sl_price):
+def place_sl_long(symbol, sl_price):
     params = {
         'stopPrice': sl_price,
-        'reduceOnly': True,
+        'closePosition': True,
         'workingType': 'MARK_PRICE'
     }
-    return exchange.create_order(symbol, 'STOP_MARKET', 'sell', amount, None, params)
+    return exchange.create_order(symbol, 'STOP_MARKET', 'sell', None, None, params)
 
-def place_sl_short(symbol, amount, sl_price):
+def place_sl_short(symbol, sl_price):
     params = {
         'stopPrice': sl_price,
-        'reduceOnly': True,
+        'closePosition': True,
         'workingType': 'MARK_PRICE'
     }
-    return exchange.create_order(symbol, 'STOP_MARKET', 'buy', amount, None, params)
+    return exchange.create_order(symbol, 'STOP_MARKET', 'buy', None, None, params)
 
 def has_position(symbol_market_id):
     """지정한 심볼의 포지션 보유 여부 확인"""
@@ -779,7 +779,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_sol_buy_time_15m = time.time()
         
         place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, amount, sl_price)
+        place_sl_long(symbol, sl_price)
         print(f"[{symbol} {timeframe}] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -816,7 +816,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_sol_buy_time_15m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, amount, sl_price)
+        place_sl_short(symbol, sl_price)
         print(f"[{symbol} {timeframe}] 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -1067,7 +1067,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             last_sol_buy_time_15m = time.time()
 
         place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, amount, sl_price)
+        place_sl_long(symbol, sl_price)
         print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -1101,7 +1101,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             last_sol_buy_time_15m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, amount, sl_price)        
+        place_sl_short(symbol, sl_price)        
         print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
@@ -1233,7 +1233,7 @@ def trade_rsi_close_strategy_xrp_long(
 
     if current_sol == 0:
         place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, amount, sl_price)    
+        place_sl_long(symbol, sl_price)    
         print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
     else:
         print(f"[{symbol} XRP_LONG] CLOSE 기준 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
@@ -1352,7 +1352,7 @@ def trade_rsi_close_strategy_ada_short(
 
     if current_sol == 0:
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, amount, sl_price)
+        place_sl_short(symbol, sl_price)
         print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
     else:
         print(f"[{symbol} ADA_SHORT] CLOSE 기준 숏 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
