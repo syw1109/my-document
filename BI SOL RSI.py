@@ -398,8 +398,8 @@ def trade_once_sol():
         print("주문 수량이 0이라서 중단")
         return
 
-    tp_price_long  = current_price * 1.0105
-    tp_price_short = current_price * 0.99
+    tp_price_long  = current_price * 1.011
+    tp_price_short = current_price * 0.989
     
     sl_price_long  = current_price * 0.93 
     sl_price_short = current_price * 1.07   
@@ -425,7 +425,7 @@ def trade_once_sol():
 
         exchange.create_market_buy_order(SOL_SYMBOL, amount)
         place_tp_long(SOL_SYMBOL, amount, tp_price_long)
-        place_sl_long(SOL_SYMBOL, amount, sl_price_long)        
+        place_sl_long(SOL_SYMBOL, sl_price_long)        
         print(f"롱 진입 | amount={amount} | price={current_price} | tp={tp_price_long}")
         return
 
@@ -442,7 +442,7 @@ def trade_once_sol():
 
         exchange.create_market_sell_order(SOL_SYMBOL, amount)
         place_tp_short(SOL_SYMBOL, amount, tp_price_short)
-        place_sl_short(SOL_SYMBOL, amount, sl_price_short)        
+        place_sl_short(SOL_SYMBOL, sl_price_short)        
         print(f"숏 진입 | amount={amount} | price={current_price} | tp={tp_price_short}")
         return
 
@@ -532,12 +532,12 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
     """
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 16:
+    if len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]       # 직전 확정봉
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
+    base_16 = df.iloc[-17:-1]  # 2~16, 2 번 봉 포함
 
     lowest_low = base_15['low'].min()
     lowest_rsi = base_15['rsi'].min()
@@ -580,12 +580,12 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
     """
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 16:
+    if len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함. 15봉 변동성 보는 목적
+    base_16 = df.iloc[-17:-1]  # 2~17, 2 번 봉 포함. 16봉 변동성 시가도 포함하기위한  보는 목적
 
 
     highest_high = base_15['high'].max()
@@ -830,12 +830,12 @@ def analyze_bullish_divergence_close(symbol, timeframe, rsi_raise_pct=0.02, min_
     """
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 16:
+    if len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]  # 직전봉 1
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
+    base_16 = df.iloc[-17:-1]  # 2~17, 2 번+16번봉포함 시가 포함 목적 봉 포함
 
     lowest_close = base_15['close'].min()
     lowest_rsi = base_15['rsi'].min()
@@ -873,12 +873,12 @@ def analyze_bearish_divergence_close(symbol, timeframe, rsi_drop_pct=0.02, min_v
     """
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 16:
+    if len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]  # 직전봉 1
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-16:-1]  # 2~16, 2 번 봉 포함
+    base_16 = df.iloc[-17:-1]  # 2~17, 2 번~16까지 최초봉 시가도 포함하기위한 목적 봉 포함
 
     highest_close = base_15['close'].max()
     highest_rsi = base_15['rsi'].max()
@@ -913,7 +913,8 @@ def analyze_bearish_divergence_close(symbol, timeframe, rsi_drop_pct=0.02, min_v
 def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
     """close 기준 RSI 다이버전스 전략 실행 함수 (롱 + 숏)"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
-
+    global last_xrp_long_1h, last_xrp_long_15m      # ← 추가 (롱용)
+    global last_ada_short_1h, last_ada_short_15m     # ← 추가 (숏용)
     # ──────────────────────────────────────────────────────────────
     # 쿨다운 체크 (60 초 이내 진입 금지)
     # ──────────────────────────────────────────────────────────────
@@ -1063,8 +1064,10 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
+            last_xrp_long_1h = time.time()      # ← 시간 업데이트 추가            
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
+            last_xrp_long_15m = time.time()     # ← 시간 업데이트 추가
 
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
@@ -1097,8 +1100,10 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
+            last_ada_short_1h = time.time()     # ← 시간 업데이트 추가
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
+            last_ada_short_15m = time.time()    # ← 시간 업데이트 추가
 
         place_tp_short(symbol, amount, tp_price)
         place_sl_short(symbol, sl_price)        
@@ -1833,7 +1838,7 @@ while True:
         # ─────────────────────────────────────────
         # ★ 핵심: 기본 전략 후 2 초 대기
         # ─────────────────────────────────────────
-        time.sleep(2)
+        time.sleep(1)
 
         # XRP 보유 시 롱 전용
         xrp_position = get_position_amount('XRP/USDT')
@@ -1959,7 +1964,7 @@ while True:
                 range_volatility_pct=0.023                
             )
 
-        time.sleep(23)  # 25 초 간격
+        time.sleep(20)  # 25 초 간격
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
