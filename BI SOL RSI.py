@@ -624,6 +624,8 @@ def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatil
 def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.003,min_range_volatility=0.01):
     """공통 RSI 다이버전스 전략 실행 함수"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
+    global last_xrp_long_1h, last_xrp_long_15m      # ← 추가
+    global last_ada_short_1h, last_ada_short_15m     # ← 추가    
     
     # ──────────────────────────────────────────────────────────────
     # 쿨다운 체크 (60 초 이내 진입 금지)
@@ -775,8 +777,10 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
+            last_xrp_long_1h = time.time()      # ← 추가            
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
+            last_xrp_long_15m = time.time()     # ← 추가
         
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
@@ -812,8 +816,10 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
+            last_ada_short_1h = time.time()     # ← 추가
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
+            last_ada_short_15m = time.time()    # ← 추가
 
         place_tp_short(symbol, amount, tp_price)
         place_sl_short(symbol, sl_price)
@@ -1173,7 +1179,7 @@ def trade_rsi_close_strategy_xrp_long(
         return
 
     n_xrp = abs(xrp_position)
-    sol_threshold = 40 * n_xrp
+    sol_threshold = 60 * n_xrp
     sol_position = get_position_amount('SOL/USDT')
     current_sol = sol_position if sol_position > 0 else 0
 
@@ -1293,7 +1299,7 @@ def trade_rsi_close_strategy_ada_short(
         return
 
     n_ada = abs(ada_position)
-    sol_threshold = 7 * n_ada
+    sol_threshold = 8 * n_ada
     sol_position = get_position_amount('SOL/USDT')
     current_sol = -sol_position if sol_position < 0 else 0
 
