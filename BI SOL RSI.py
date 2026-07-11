@@ -1060,24 +1060,26 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     # 이평선 터치 또는 DOGE 매물대 터치 중 하나라도 만족하면 통과
     cond_touch = cond_touch_ma or cond_touch_doge
 
-    # 정배열중 RSI+ W 나오면 사는 전략 
-    # 직전봉은 상승봉, 2번째 이전 봉은 하락봉이어야 함
-    cond_candle = (prev['close'] > prev['open']) and (prev2['close'] < prev2['open'])
+    # # 정배열중 RSI+ W 나오면 사는 전략 ->     #정배열 RSI+ 전략은 실효성이 없어서 폐쇄
+    # # 직전봉은 상승봉, 2번째 이전 봉은 하락봉이어야 함
+    # cond_candle = (prev['close'] > prev['open']) and (prev2['close'] < prev2['open'])
 
-    # 정배열 RSI+ 전략 1. 오른쪽 엉덩이가 살짝은 내려가고 RSI는 살짝 오르는 모양
-    cond_rsi_1 = (prev2['rsi'] > lowest_rsi * 1.01) and (prev2['close'] < lowest_close)
-    # 정배열 RSI+ 전략 2. 오른쪽 엉덩이가 살짝 올라가고 RSI는 적당히 올라가는 모양
-    cond_rsi_2 = (prev2['rsi'] > lowest_rsi * 1.04) and (prev2['close'] < lowest_close * 0.998)
-    # 정배열 RSI+ 전략 3. 오른쪽 엉덩이가 좀더 올라가도 rsi 가 많이 높으면 OK
-    cond_rsi_3 = (prev2['rsi'] > lowest_rsi * 1.2) and (prev2['close'] < lowest_close * 0.995)
+    # # 정배열 RSI+ 전략 1. 오른쪽 엉덩이가 살짝은 내려가고 RSI는 살짝 오르는 모양
+    # cond_rsi_1 = (prev2['rsi'] > lowest_rsi * 1.01) and (prev2['close'] < lowest_close)
+    # # 정배열 RSI+ 전략 2. 오른쪽 엉덩이가 살짝 올라가고 RSI는 적당히 올라가는 모양
+    # cond_rsi_2 = (prev2['rsi'] > lowest_rsi * 1.04) and (prev2['close'] < lowest_close * 0.998)
+    # # 정배열 RSI+ 전략 3. 오른쪽 엉덩이가 좀더 올라가도 rsi 가 많이 높으면 OK
+    # cond_rsi_3 = (prev2['rsi'] > lowest_rsi * 1.2) and (prev2['close'] < lowest_close * 0.995)
 
-    # 정배열 RSI+ 전략이 하나라도 맞으면 True
-    cond_rsi_plus = cond_candle and (cond_rsi_1 or cond_rsi_2 or cond_rsi_3)
+    # # 정배열 RSI+ 전략이 하나라도 맞으면 True
+    # cond_rsi_plus = cond_candle and (cond_rsi_1 or cond_rsi_2 or cond_rsi_3)
 
+
+    
     # 기존 다이버전스 or 정배열 RSI+ 중 하나라도 맞으면 진입 후보
     # 단, 변동성/정배열/터치 조건도 모두 함께 확인
         
-    signal = (cond_div or cond_rsi_plus) and cond_vol and cond_ma and cond_touch
+    signal = cond_div and cond_vol and cond_ma and cond_touch
 
     # 결과 반환
     return {
