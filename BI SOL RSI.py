@@ -1148,10 +1148,11 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
         ma50 = float(prev['ma50'])
         ma200 = float(prev['ma200'])
+        vwma100 = float(prev['vwma100'])        
         prev_close1 = float(prev['close'])
         prev_close2 = float(prev2['close'])
 
-        cond_stack = ma50 < ma200
+        cond_stack = ma50 < vwma100 < ma200
         cond_prev1 = prev_close1 > ma50 * 1.0003
         cond_prev2 = prev_close2 < ma50
         cond_range = ((prev_close1 - low_30) / prev_close1) < 0.0065
