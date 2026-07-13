@@ -81,11 +81,15 @@
 # 5배 -> 10배 수정, 몇시간 만에 10% 이상 하락하는 경우가 1년에 2~3번 있어서, 5배로 하면 4000불 손실이라서 10배로 수정. 7% 손절 걸면 상관없는거 아닌가? 그래서 다시 5배 유지 
 # cme룰 목요일도 추가
 
+# 7/11 5분봉 롱 숏 링크 전략 추가 - ㅇ
+# 7/11 50ma, 100vwma, 200ma 이평선 RSI+전략 추가 - eth로 추가 매수 조절. 평소엔 그냥 사짐. doge/10 가격도 
+# 7/11 레버리지 10배로 수정. 진입 씨드 조절 필요
+# 0.7% 손절룰 추가. 벌때는 1.4% 벌고 잃을때는 0.7%만 잃기. 승률 55%~60% 
 
 # + 추가하려는 전략
-# 7/7 5분봉 숏 링크 전략 추가
-# 7/7 50ma, 100vwma, 200ma 이평선 RSI+전략 추가 - eth로 추가 매수 조절. 평소엔 그냥 사짐
-# 7/7 레버리지 10배로 수정. 진입 씨드 조절 필요
+
+
+
 
 # 5캔들안에 다이버 있었는지 확인하고 1% 하락된 가격으로 진입하는 조건? 최초 다이버 이후 바로 진입될까봐 걱정, → 요건 ticker xrp 말고 다른거로 하면 되겠다.
 # 추매 후 추매 물량은 tp기준으로 털고 싶은데, 그렇게 하자니 폭락시에 다 뚜드려 맞을까봐 무섭네. 차라리 7% SL이면 추가 손실은 없을거자나.
@@ -394,7 +398,7 @@ def trade_once_sol():
     today_above_both        = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
 
     available_usdt = get_available_usdt()
-    margin_to_use  = available_usdt
+    margin_to_use  = available_usdt*0.97
     notional       = margin_to_use * LEVERAGE
     amount         = round(notional / current_price, 3)
 
@@ -662,7 +666,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
 
     # 선물 계좌 사용 가능 USDT 기준으로 주문 수량 계산
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt
+    margin_to_use = available_usdt*0.97
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
@@ -1109,6 +1113,143 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     }    
 ### 이평선 전략 추가
 
+### 단타왕 ㄴ자 매매 카피전략
+# 공통 조건 SOL 보유시 동작 안함.
+
+# 1. 5분봉 전용 조건
+# 1)  직전봉 종가 prev close1기준 50ma<200ma역배열
+# 2) 이전 첫번째봉 prev close1 > 50ma*1.0003 (0.03% 이상)
+# 3) 이전 두번째봉 prev close2 < 50ma
+# 4) prev close1 이전 30봉 중 lowest close 30 구함 -> (prev close - lowest close 30)/prev close<0.0065 (0.65% 미만)
+# → 롱 매수 진입 T.P 1% / S.L 0.6%
+
+# 2. 15분봉 전용 조건
+# 1. 직전봉 종가 prev close1기준 50ma<100vwma<200ma역배열
+# 2) 이전 첫번째봉 prev close1 > 50ma*1.0003 (0.03% 이상)
+# 3) 이전 두번째봉 prev close2 < 50ma
+# 4) prev close1 이전 20봉 중 lowest close 20 구함 -> (prev close - lowest close 20)/prev close<0.01 (1% 미만)
+# → 롱 매수 진입 T.P 1.4% / S.L 0.7%
+
+# 2. 직전봉 종가 prev close1기준 50ma<200ma<100vwma 불완전 역배열
+# 2) 이전 첫번째봉 prev close1 > 50ma*1.0003 (0.03% 이상)
+# 3) 이전 두번째봉 prev close2 < 50ma
+# 4) prev close1 이전 20봉 중 lowest close 20 구함 -> (prev close - lowest close 20)/prev close<0.008 (0.8% 미만)
+# → 롱 매수 진입 T.P 1% / S.L 0.7%
+def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
+    df = df_cache.copy()
+
+    if timeframe == '5m':
+        if len(df) < 31:
+            return None
+
+        prev = df.iloc[-1]
+        prev2 = df.iloc[-2]
+        low_30 = df.iloc[-31:-1]['close'].min()
+
+        ma50 = float(prev['ma50'])
+        ma200 = float(prev['ma200'])
+        prev_close1 = float(prev['close'])
+        prev_close2 = float(prev2['close'])
+
+        cond_stack = ma50 < ma200
+        cond_prev1 = prev_close1 > ma50 * 1.0003
+        cond_prev2 = prev_close2 < ma50
+        cond_range = ((prev_close1 - low_30) / prev_close1) < 0.0065
+
+        signal = cond_stack and cond_prev1 and cond_prev2 and cond_range
+
+        return {
+            "signal": signal,
+            "side": "long",
+            "timeframe_case": "5m",
+            "prev_open": float(prev['open']),
+            "prev_close": prev_close1,
+            "prev2_open": float(prev2['open']),
+            "prev2_close": prev_close2,
+            "ma50": ma50,
+            "ma200": ma200,
+            "vwma100": float(prev['vwma100']),
+            "lowest_close": float(low_30),
+            "stack_condition": cond_stack,
+            "prev1_condition": cond_prev1,
+            "prev2_condition": cond_prev2,
+            "range_condition": cond_range,
+            "tp_pct": 0.01,
+            "sl_pct": 0.006,
+            "tp_price": prev_close1 * 1.01,
+            "sl_price": prev_close1 * (1 - 0.006)
+        }
+
+    if timeframe == '15m':
+        if len(df) < 21:
+            return None
+
+        prev = df.iloc[-1]
+        prev2 = df.iloc[-2]
+        low_20 = df.iloc[-21:-1]['close'].min()
+
+        ma50 = float(prev['ma50'])
+        ma200 = float(prev['ma200'])
+        vwma100 = float(prev['vwma100'])
+        prev_close1 = float(prev['close'])
+        prev_close2 = float(prev2['close'])
+
+        cond_prev1 = prev_close1 > ma50 * 1.0003
+        cond_prev2 = prev_close2 < ma50
+        cond_range_1 = ((prev_close1 - low_20) / prev_close1) < 0.01
+        cond_range_2 = ((prev_close1 - low_20) / prev_close1) < 0.008
+
+        case1_stack = ma50 < vwma100 < ma200
+        case2_stack = ma50 < ma200 < vwma100
+
+        case1_signal = case1_stack and cond_prev1 and cond_prev2 and cond_range_1
+        case2_signal = case2_stack and cond_prev1 and cond_prev2 and cond_range_2
+
+        signal = case1_signal or case2_signal
+
+        if case1_signal:
+            tp_pct = 0.014
+            sl_pct = 0.007
+            timeframe_case = "15m_case1"
+        elif case2_signal:
+            tp_pct = 0.01
+            sl_pct = 0.007
+            timeframe_case = "15m_case2"
+        else:
+            tp_pct = None
+            sl_pct = None
+            timeframe_case = None
+
+        return {
+            "signal": signal,
+            "side": "long",
+            "timeframe_case": timeframe_case,
+            "prev_open": float(prev['open']),
+            "prev_close": prev_close1,
+            "prev2_open": float(prev2['open']),
+            "prev2_close": prev_close2,
+            "ma50": ma50,
+            "ma200": ma200,
+            "vwma100": vwma100,
+            "lowest_close": float(low_20),
+            "case1_stack_condition": case1_stack,
+            "case2_stack_condition": case2_stack,
+            "prev1_condition": cond_prev1,
+            "prev2_condition": cond_prev2,
+            "range_condition_case1": cond_range_1,
+            "range_condition_case2": cond_range_2,
+            "case1_signal": case1_signal,
+            "case2_signal": case2_signal,
+            "tp_pct": tp_pct,
+            "sl_pct": sl_pct,
+            "tp_price": None if tp_pct is None else prev_close1 * (1 + tp_pct),
+            "sl_price": None if sl_pct is None else prev_close1 * (1 - sl_pct)
+        }
+
+    return None
+### 단타왕 ㄴ자 매매 카피전략
+
+
 def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
     """close 기준 RSI 다이버전스 전략 실행 함수 (롱 + 숏)"""
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
@@ -1144,7 +1285,7 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
 
     # 선물 계좌 사용 가능 USDT 기준으로 주문 수량 계산
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt
+    margin_to_use = available_usdt*0.97
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
@@ -1407,7 +1548,7 @@ def trade_rsi_close_strategy_xrp_sol(
 
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt
+    margin_to_use = available_usdt*0.97
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
@@ -1548,7 +1689,7 @@ def trade_rsi_close_strategy_link(
 
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt
+    margin_to_use = available_usdt*0.97
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
@@ -1690,7 +1831,7 @@ def trade_rsi_close_strategy_eth_long_new(
     df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
     # 주문 수량 계산
     available_usdt = current_balance
-    margin_to_use = available_usdt
+    margin_to_use = available_usdt*0.97
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
@@ -1741,6 +1882,84 @@ def trade_rsi_close_strategy_eth_long_new(
         print(f"[{symbol} ETH_LONG_NEW] SOL 포지션 있음, TP/SL 미설정")
 
     print(f"[{symbol} ETH_LONG_NEW] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
+
+# 단타왕 ㄴ자 50ma 매매법
+def trade_50ma_close_strategy(symbol, market_id, timeframe):
+    global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m
+
+    now = time.time()
+
+    if now - last_50ma_close_trade_time < 60:
+        print(f"[{symbol} 50MA_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_50ma_close_trade_time:.1f}초 경과)")
+        return
+
+    if timeframe == '5m' and now - last_50ma_close_5m < 600:
+        minutes_ago = (now - last_50ma_close_5m) / 60
+        print(f"[{symbol} 50MA_CLOSE 5m] 최근 {minutes_ago:.1f}분 전에 10 분봉 매수됨 (5 분 내 중복매수 금지)")
+        return
+
+    if timeframe == '15m' and now - last_50ma_close_15m < 1800:
+        minutes_ago = (now - last_50ma_close_15m) / 60
+        print(f"[{symbol} 50MA_CLOSE 15m] 최근 {minutes_ago:.1f}분 전에 30 분봉 매수됨 (15 분 내 중복매수 금지)")
+        return
+
+    set_margin_and_leverage(symbol)
+
+    current_balance = get_available_usdt()
+    if current_balance < 2500 or current_balance > 8000:
+        print(f"[{symbol} 50MA_CLOSE] 계좌 잔고 {current_balance:.2f} USD (2500~7000 밖이므로 진입 금지)")
+        return
+
+    sol_position = get_position_amount('SOL/USDT')
+    if sol_position > 0:
+        print(f"[{symbol} 50MA_CLOSE] SOL 기존 롱 포지션 있음: {sol_position}개")
+        return
+
+    df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
+    if df is None or len(df) < 21:
+        print(f"[{symbol} 50MA_CLOSE] 확정봉 데이터 부족")
+        return
+
+    sig = analyze_50ma_close_strategy(symbol, timeframe, df)
+    print(f"[{symbol} 50MA_CLOSE] SIGNAL={sig}")
+
+    if not sig or not sig["signal"]:
+        print(f"[{symbol} 50MA_CLOSE] 진입 조건 없음")
+        return
+
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    margin_to_use = current_balance * 0.97 # 100%하면 주문 불가 수수료 낼 돈
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    if amount <= 0:
+        print(f"[{symbol} 50MA_CLOSE] 주문 수량이 0 이라서 중단")
+        return
+
+    tp_price = sig["tp_price"]
+    sl_price = sig["sl_price"]
+
+    exchange.create_market_buy_order(
+        symbol='SOL/USDT',
+        amount=amount,
+        params={'positionSide': 'LONG'}
+    )
+
+    last_50ma_close_trade_time = time.time()
+    if timeframe == '5m':
+        last_50ma_close_5m = time.time()
+    elif timeframe == '15m':
+        last_50ma_close_15m = time.time()
+
+    current_sol_position = get_position_amount('SOL/USDT')
+    if current_sol_position == 0:
+        place_tp_long('SOL/USDT', amount, tp_price)
+        place_sl_long('SOL/USDT', sl_price)
+        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 없음, TP/SL 설정")
+    else:
+        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 있음, TP/SL 미설정")
+
+    print(f"[{symbol} 50MA_CLOSE] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
 
@@ -1767,7 +1986,9 @@ last_eth_long_trade_time = 0
 last_eth_long_1h = 0 
 last_eth_long_15m = 0
 
-
+last_50ma_close_trade_time = 0
+last_50ma_close_5m = 0
+last_50ma_close_15m = 0
 
 while True:
     try:
@@ -1920,8 +2141,8 @@ while True:
                 side='long',
                 tp_pct_1=0.01,
                 tp_pct_2=0.012,
-                min_volatility=0.002,
-                price_diff_pct=0.003,
+                min_volatility=0.0015,
+                price_diff_pct=0.0015,
                 rsi_raise_pct=0.01,
                 min_range_volatility=0.015
             )
@@ -1934,8 +2155,8 @@ while True:
                 side='short',
                 tp_pct_1=0.01,
                 tp_pct_2=0.012,
-                min_volatility=0.002,
-                price_diff_pct=0.003,
+                min_volatility=0.0015,
+                price_diff_pct=0.0015,
                 rsi_drop_pct=0.01,
                 min_range_volatility=0.015
             )
@@ -1943,7 +2164,7 @@ while True:
 # 이평선 매물대 전략, eth는 추가매수용 없어도 매수는 됨
         sol_position = get_position_amount('SOL/USDT')
 
-        if sol_position == 0:
+        if sol_position == 0: # 이렇게 되어 있으면 추매는 안되겠다. 얘는 추매용으로 쓰지말자 그냥,,
             trade_rsi_close_strategy_eth_long_new(
                 symbol='SOL/USDT',
                 market_id='SOLUSDT',
@@ -1960,6 +2181,18 @@ while True:
                 tp_long_pct=0.012,
                 tp_long_pct_2=0.018,
                 min_volatility=0.0015
+            )
+            # 50ma 단타왕 전략 SOL 
+            trade_50ma_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m'
+            )
+
+            trade_50ma_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='5m'
             )
 
 
