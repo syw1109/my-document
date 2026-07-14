@@ -1254,6 +1254,40 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
     return None
 ### 단타왕 ㄴ자 매매 카피전략
 
+def analyze_50ma_close_strategy_2(symbol, timeframe, df_cache):
+    df = df_cache.copy()
+
+    if len(df) < 2:
+        return None
+
+    prev = df.iloc[-1]
+    prev2 = df.iloc[-2]
+
+    prev_close1 = float(prev["close"])
+    prev_ma50 = float(prev["ma50"])
+
+    signal = prev_close1 > prev_ma50
+
+    return {
+        "signal": signal,
+        "side": "long",
+        "timeframe_case": f"{timeframe}_debug_close_above_ma50",
+        "prev_open": float(prev["open"]),
+        "prev_close": prev_close1,
+        "prev2_open": float(prev2["open"]),
+        "prev2_close": float(prev2["close"]),
+        "ma50": prev_ma50,
+        "ma200": float(prev["ma200"]) if "ma200" in prev else None,
+        "vwma100": float(prev["vwma100"]) if "vwma100" in prev else None,
+        "stack_condition": signal,
+        "prev1_condition": signal,
+        "prev2_condition": True,
+        "range_condition": True,
+        "tp_pct": 0.01,
+        "sl_pct": 0.006,
+        "tp_price": prev_close1 * 1.01,
+        "sl_price": prev_close1 * (1 - 0.006)
+    }
 
 
 def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
@@ -1866,9 +1900,13 @@ def trade_rsi_close_strategy_eth_long_new(
     tp_pct = tp_long_pct_2 if bull["range_volatility"] >= 0.015 else tp_long_pct
     tp_price = bull["prev_close"] * (1 + tp_pct)
     sl_price = bull["prev_close"] * (1 - 0.007)    
-    # SOL 실제 매수
 
-    
+    # SOL 실제 매수
+    # exchange.create_market_buy_order(
+    #     symbol='SOL/USDT',
+    #     amount=amount,
+    #     params={'positionSide': 'LONG'}
+    # )
     try:
         order = exchange.create_market_buy_order(
             symbol=symbol,
@@ -1877,8 +1915,8 @@ def trade_rsi_close_strategy_eth_long_new(
         print(f"[{symbol} ETH_LONG_NEW] BUY ORDER RESULT={order}")
     except Exception as e:
         print(f"[{symbol} ETH_LONG_NEW] 주문 실패: {e}")
-        return  
-        
+        return
+
     # 쿨다운 시간 갱신
     last_eth_long_trade_time = time.time()
     if timeframe == '1h':
@@ -1952,16 +1990,22 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
     tp_price = sig["tp_price"]
     sl_price = sig["sl_price"]
 
+    # exchange.create_market_buy_order(
+    #     symbol='SOL/USDT',
+    #     amount=amount,
+    #     params={'positionSide': 'LONG'}
+    # )
+
     try:
         order = exchange.create_market_buy_order(
             symbol=symbol,
             amount=amount
         )
-        print(f"[{symbol} 50MA_CLOSE] BUY ORDER RESULT={order}")
+        print(f"[{symbol} ETH_LONG_NEW] BUY ORDER RESULT={order}")
     except Exception as e:
-        print(f"[{symbol} 50MA_CLOSE] 주문 실패: {e}")
+        print(f"[{symbol} ETH_LONG_NEW] 주문 실패: {e}")
         return
-
+    
     last_50ma_close_trade_time = time.time()
     if timeframe == '5m':
         last_50ma_close_5m = time.time()
@@ -1977,6 +2021,109 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
         print(f"[{symbol} 50MA_CLOSE] SOL 포지션 있음, TP/SL 미설정")
 
     print(f"[{symbol} 50MA_CLOSE] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
+
+
+#####
+def trade_50ma_close_strategy_2(symbol, market_id, timeframe):
+    global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m
+
+    now = time.time()
+
+    if now - last_50ma_close_trade_time < 10:
+        print(f"[{symbol} 50MA_DEBUG] 전체 쿨다운 중")
+        return
+
+    set_margin_and_leverage(symbol)
+
+    current_balance = get_available_usdt()
+    print(f"[{symbol} 50MA_DEBUG] available_usdt={current_balance}")
+
+    if current_balance <= 0:
+        print(f"[{symbol} 50MA_DEBUG] 사용 가능 증거금 없음")
+        return
+
+    sol_position = get_position_amount('SOL/USDT')
+    print(f"[{symbol} 50MA_DEBUG] sol_position={sol_position}")
+
+    if sol_position > 0:
+        print(f"[{symbol} 50MA_DEBUG] 기존 SOL 포지션 있음: {sol_position}")
+        return
+
+    try:
+        df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
+        print(f"[{symbol} 50MA_DEBUG] df_len={len(df)}")
+    except Exception as e:
+        print(f"[{symbol} 50MA_DEBUG] 캔들 조회 실패: {e}")
+        return
+
+    if df is None or len(df) < 2:
+        print(f"[{symbol} 50MA_DEBUG] 데이터 부족")
+        return
+
+    sig = analyze_50ma_close_strategy_2(symbol, timeframe, df)
+    print(f"[{symbol} 50MA_DEBUG] SIGNAL={sig}")
+
+    if not sig:
+        print(f"[{symbol} 50MA_DEBUG] 분석 결과 없음")
+        return
+
+    if not sig["signal"]:
+        print(f"[{symbol} 50MA_DEBUG] 조건 불만족")
+        return
+
+    current_price = float(exchange.fetch_ticker(symbol)["last"])
+    margin_to_use = current_balance * 0.5
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    print(
+        f"[{symbol} 50MA_DEBUG] price={current_price}, "
+        f"margin_to_use={margin_to_use}, notional={notional}, amount={amount}"
+    )
+
+    if amount <= 0:
+        print(f"[{symbol} 50MA_DEBUG] 주문 수량 0")
+        return
+
+    # try:
+    #     order = exchange.create_market_buy_order(
+    #         symbol=symbol,
+    #         amount=amount,
+    #         params={'positionSide': 'LONG'}
+    #     )
+    #     print(f"[{symbol} 50MA_DEBUG] BUY ORDER RESULT={order}")
+    # except Exception as e:
+    #     print(f"[{symbol} 50MA_DEBUG] 주문 실패: {e}")
+    #     return
+    
+    try:
+        order = exchange.create_market_buy_order(
+            symbol=symbol,
+            amount=amount
+        )
+        print(f"[{symbol} ETH_LONG_NEW] BUY ORDER RESULT={order}")
+    except Exception as e:
+        print(f"[{symbol} ETH_LONG_NEW] 주문 실패: {e}")
+        return    
+
+    last_50ma_close_trade_time = time.time()
+    if timeframe == '5m':
+        last_50ma_close_5m = time.time()
+    elif timeframe == '15m':
+        last_50ma_close_15m = time.time()
+
+    current_sol_position = get_position_amount('SOL/USDT')
+    if current_sol_position == 0:
+        place_tp_long('SOL/USDT', amount, tp_price)
+        place_sl_long('SOL/USDT', sl_price)
+        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 없음, TP/SL 설정")
+    else:
+        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 있음, TP/SL 미설정")
+
+
+    print(f"[{symbol} 50MA_DEBUG] 진입 완료 | amount={amount} | price={current_price}")
+
+
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
 
@@ -2210,6 +2357,12 @@ while True:
                 symbol=SOL_SYMBOL,
                 market_id=MARKET_ID_SOL,
                 timeframe='5m'
+            )
+
+            trade_50ma_close_strategy_2(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m'
             )
 
 
