@@ -845,88 +845,222 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
 
 
 #---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
-def analyze_bullish_divergence_close(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003, price_diff_pct=0.001):
+def analyze_bullish_divergence_close(
+    symbol,
+    timeframe,
+    rsi_raise_pct=0.02,
+    min_volatility=0.003,
+    price_diff_pct=0.001,
+    rsi_raise_pct_30=0.001,
+    min_volatility_30=0.001,
+    price_diff_pct_30=0.005
+):
     """
-    상승 다이버전스 조건 판단 (close 기준 - 완화된 룰):
+    상승 다이버전스 판단 함수.
+
+    - 기존 15봉 조건을 먼저 계산한다.
+    - 추가로 30봉 조건도 따로 계산한다.
+    - 15봉 또는 30봉 중 하나라도 충족하면 signal=True.
     """
+
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 17:
+    # 30봉 기준까지 보려면 최소 31개 이상은 필요함
+    if len(df) < 31:
         return None
 
-    prev_candle = df.iloc[-1]  # 직전봉 1
-    base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-17:-1]  # 2~17, 2 번+16번봉포함 시가 포함 목적 봉 포함
+    # 직전 확정봉
+    prev_candle = df.iloc[-1]
 
+    # 15봉 기준:
+    # 직전봉을 제외한 최근 15개 구간을 기준으로 저점/RSI를 구한다.
+    base_15 = df.iloc[-16:-2]
+    base_16 = df.iloc[-17:-1]
+
+    # 30봉 기준:
+    # 직전봉을 제외한 최근 30개 구간을 기준으로 저점/RSI를 구한다.
+    base_30 = df.iloc[-31:-2]
+    base_31 = df.iloc[-32:-1]
+
+    # -------------------------
+    # 15봉 조건
+    # -------------------------
     lowest_close = base_15['close'].min()
     lowest_rsi = base_15['rsi'].min()
-    
-    # ✅ 추가
+
     range_high = base_16['close'].max()
-    range_low  = base_16['close'].min()
-    range_volatility = (range_high - range_low) / range_high    
+    range_low = base_16['close'].min()
+    range_volatility = (range_high - range_low) / range_high
 
-    cond_price = prev_candle['close'] < lowest_close * (1 - price_diff_pct)
-    cond_rsi = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
-    cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+    cond_price_15 = prev_candle['close'] < lowest_close * (1 - price_diff_pct)
+    cond_rsi_15 = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
+    cond_volatility_15 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
-    signal = cond_price and cond_rsi and cond_volatility
+    signal_15 = cond_price_15 and cond_rsi_15 and cond_volatility_15
+
+    # -------------------------
+    # 30봉 조건
+    # -------------------------
+    lowest_close_30 = base_30['close'].min()
+    lowest_rsi_30 = base_30['rsi'].min()
+
+    range_high_30 = base_31['close'].max()
+    range_low_30 = base_31['close'].min()
+    range_volatility_30 = (range_high_30 - range_low_30) / range_high_30
+
+    cond_price_30 = prev_candle['close'] < lowest_close_30 * (1 - price_diff_pct_30)
+    cond_rsi_30 = prev_candle['rsi'] >= lowest_rsi_30 * (1 + rsi_raise_pct_30)
+    cond_volatility_30 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility_30
+
+    signal_30 = cond_price_30 and cond_rsi_30 and cond_volatility_30
+
+    # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
+    signal = signal_15 or signal_30
+
+    # 어떤 조건으로 신호가 났는지 기록
+    if signal_15:
+        mode = "15"
+    elif signal_30:
+        mode = "30"
+    else:
+        mode = None
 
     return {
         "signal": signal,
+        "mode": mode,
         "side": "long",
+
+        # 15봉 기준 정보
         "lowest_close": float(lowest_close),
         "lowest_rsi": float(lowest_rsi),
+        "price_condition_15": cond_price_15,
+        "rsi_condition_15": cond_rsi_15,
+        "volatility_condition_15": cond_volatility_15,
+        "range_volatility_15": float(range_volatility),
+
+        # 30봉 기준 정보
+        "lowest_close_30": float(lowest_close_30),
+        "lowest_rsi_30": float(lowest_rsi_30),
+        "price_condition_30": cond_price_30,
+        "rsi_condition_30": cond_rsi_30,
+        "volatility_condition_30": cond_volatility_30,
+        "range_volatility_30": float(range_volatility_30),
+
+        # 공통 직전봉 정보
         "prev_open": float(prev_candle['open']),
         "prev_close": float(prev_candle['close']),
         "prev_rsi": float(prev_candle['rsi']),
-        "price_condition": cond_price,
-        "rsi_condition": cond_rsi,
-        "volatility_condition": cond_volatility,
-        "range_volatility": float(range_volatility),  # ✅ 추가        
+
+        # 기본 TP 기준용
         "tp_price": float(prev_candle['close'])
     }
 
 
-def analyze_bearish_divergence_close(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003, price_diff_pct=0.001):
+def analyze_bearish_divergence_close(
+    symbol,
+    timeframe,
+    rsi_drop_pct=0.02,
+    min_volatility=0.003,
+    price_diff_pct=0.001,
+    rsi_drop_pct_30=0.001,
+    min_volatility_30=0.001,
+    price_diff_pct_30=0.005
+):
     """
-    하락 다이버전스 조건 판단 (close 기준 - 완화된 룰):
+    하락 다이버전스 판단 함수.
+
+    - 기존 15봉 조건을 먼저 계산한다.
+    - 추가로 30봉 조건도 따로 계산한다.
+    - 15봉 또는 30봉 중 하나라도 충족하면 signal=True.
     """
+
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 17:
+    # 30봉 기준까지 보려면 최소 31개 이상은 필요함
+    if len(df) < 31:
         return None
 
-    prev_candle = df.iloc[-1]  # 직전봉 1
-    base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
-    base_16 = df.iloc[-17:-1]  # 2~17, 2 번~16까지 최초봉 시가도 포함하기위한 목적 봉 포함
+    # 직전 확정봉
+    prev_candle = df.iloc[-1]
 
+    # 15봉 기준
+    base_15 = df.iloc[-16:-2]
+    base_16 = df.iloc[-17:-1]
+
+    # 30봉 기준
+    base_30 = df.iloc[-31:-2]
+    base_31 = df.iloc[-32:-1]
+
+    # -------------------------
+    # 15봉 조건
+    # -------------------------
     highest_close = base_15['close'].max()
     highest_rsi = base_15['rsi'].max()
-    
-    # ✅ 추가
+
     range_high = base_16['close'].max()
-    range_low  = base_16['close'].min()
-    range_volatility = (range_high - range_low) / range_high    
+    range_low = base_16['close'].min()
+    range_volatility = (range_high - range_low) / range_high
 
-    cond_price = prev_candle['close'] > highest_close * (1 + price_diff_pct)
-    cond_rsi = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
-    cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+    cond_price_15 = prev_candle['close'] > highest_close * (1 + price_diff_pct)
+    cond_rsi_15 = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
+    cond_volatility_15 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
-    signal = cond_price and cond_rsi and cond_volatility
+    signal_15 = cond_price_15 and cond_rsi_15 and cond_volatility_15
+
+    # -------------------------
+    # 30봉 조건
+    # -------------------------
+    highest_close_30 = base_30['close'].max()
+    highest_rsi_30 = base_30['rsi'].max()
+
+    range_high_30 = base_31['close'].max()
+    range_low_30 = base_31['close'].min()
+    range_volatility_30 = (range_high_30 - range_low_30) / range_high_30
+
+    cond_price_30 = prev_candle['close'] > highest_close_30 * (1 + price_diff_pct_30)
+    cond_rsi_30 = prev_candle['rsi'] <= highest_rsi_30 * (1 - rsi_drop_pct_30)
+    cond_volatility_30 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility_30
+
+    signal_30 = cond_price_30 and cond_rsi_30 and cond_volatility_30
+
+    # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
+    signal = signal_15 or signal_30
+
+    # 어떤 조건으로 신호가 났는지 기록
+    if signal_15:
+        mode = "15"
+    elif signal_30:
+        mode = "30"
+    else:
+        mode = None
 
     return {
         "signal": signal,
+        "mode": mode,
         "side": "short",
+
+        # 15봉 기준 정보
         "highest_close": float(highest_close),
         "highest_rsi": float(highest_rsi),
+        "price_condition_15": cond_price_15,
+        "rsi_condition_15": cond_rsi_15,
+        "volatility_condition_15": cond_volatility_15,
+        "range_volatility_15": float(range_volatility),
+
+        # 30봉 기준 정보
+        "highest_close_30": float(highest_close_30),
+        "highest_rsi_30": float(highest_rsi_30),
+        "price_condition_30": cond_price_30,
+        "rsi_condition_30": cond_rsi_30,
+        "volatility_condition_30": cond_volatility_30,
+        "range_volatility_30": float(range_volatility_30),
+
+        # 공통 직전봉 정보
         "prev_open": float(prev_candle['open']),
         "prev_close": float(prev_candle['close']),
         "prev_rsi": float(prev_candle['rsi']),
-        "price_condition": cond_price,
-        "rsi_condition": cond_rsi,
-        "volatility_condition": cond_volatility,
-        "range_volatility": float(range_volatility),  # ✅ 추가       
+
+        # 기본 TP 기준용
         "tp_price": float(prev_candle['close'])
     }
 
@@ -1002,7 +1136,7 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     # 기준 구간의 최고/최저 종가로 변동성 계산
     range_high = base_16['close'].max()
     range_low  = base_16['close'].min()
-    range_volatility = (range_high - range_low) / range_high  #캔들 최소 변동성%
+    range_volatility = (range_high - range_low) / range_high  #이전 변동성%
 
 
     # 기존 상승 다이버전스 기본 조건
@@ -1256,58 +1390,84 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
 
 
-def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2, tp_short_pct, tp_short_pct_2, min_volatility=0.003, price_diff_pct=0.001, rsi_raise_pct=0.003, rsi_drop_pct=0.003):
-    """close 기준 RSI 다이버전스 전략 실행 함수 (롱 + 숏)"""
+def trade_rsi_close_strategy(
+    symbol,
+    market_id,
+    timeframe,
+    tp_long_pct,
+    tp_long_pct_2,
+    tp_short_pct,
+    tp_short_pct_2,
+    min_volatility=0.003,
+    price_diff_pct=0.001,
+    rsi_raise_pct=0.003,
+    rsi_drop_pct=0.003,
+    min_volatility_30=0.001,
+    price_diff_pct_30=0.005,
+    rsi_raise_pct_30=0.001,
+    rsi_drop_pct_30=0.001
+):
+    """
+    close 기준 RSI 다이버전스 전략 실행 함수.
+
+    - 기존 15봉 조건을 유지한다.
+    - 추가로 30봉 조건도 함께 본다.
+    - 둘 중 하나라도 만족하면 진입한다.
+    """
+
     global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
-    global last_xrp_long_1h, last_xrp_long_15m, last_eth_long_1h, last_eth_long_15m      # ← 추가 (롱용)
-    global last_xrp_short_1h, last_xrp_short_15m     # ← 추가 (숏용)
-    global last_link_short_5m, last_link_long_5m    # ← 추가 (숏용)    
-    # ──────────────────────────────────────────────────────────────
-    # 쿨다운 체크 (60 초 이내 진입 금지)
-    # ──────────────────────────────────────────────────────────────
-    if time.time() - last_sol_trade_time < 60:
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_sol_trade_time:.1f}초 경과)")
+    global last_xrp_long_1h, last_xrp_long_15m, last_eth_long_1h, last_eth_long_15m
+    global last_xrp_short_1h, last_xrp_short_15m
+    global last_link_short_5m, last_link_long_5m
+
+    now = time.time()
+
+    # 전체 공통 쿨다운
+    if now - last_sol_trade_time < 60:
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_sol_trade_time:.1f}초 경과)")
         return
 
-    # ──────────────────────────────────────────────────────────────
-    # timeframe 별 쿨다운 체크 (1 시간봉=60 분, 15 분봉=15 분)
-    # ──────────────────────────────────────────────────────────────
-    if timeframe == '1h' and time.time() - last_sol_buy_time_1h < 3600:
-        minutes_ago = (time.time() - last_sol_buy_time_1h) / 60
+    # timeframe 별 쿨다운
+    if timeframe == '1h' and now - last_sol_buy_time_1h < 3600:
+        minutes_ago = (now - last_sol_buy_time_1h) / 60
         print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
         return
 
-    if timeframe == '15m' and time.time() - last_sol_buy_time_15m < 900:
-        minutes_ago = (time.time() - last_sol_buy_time_15m) / 60
+    if timeframe == '15m' and now - last_sol_buy_time_15m < 900:
+        minutes_ago = (now - last_sol_buy_time_15m) / 60
         print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
         return
 
     set_margin_and_leverage(symbol)
 
-    # 이미 해당 심볼 포지션이 있으면 추가 진입 금지
+    # 이미 포지션이 있으면 진입 금지
     if has_position(market_id):
         print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
         return
 
-    # 선물 계좌 사용 가능 USDT 기준으로 주문 수량 계산
+    # 주문 수량 계산
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt*0.5
+    margin_to_use = available_usdt * 0.5
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
+
+    print(f"[{symbol} {timeframe}] available_usdt={available_usdt:.4f}, price={current_price}, amount={amount}")
 
     if amount <= 0:
         print(f"[{symbol} {timeframe}] 주문 수량이 0 이라서 중단")
         return
 
-    # close 기준 상승/하락 다이버전스 탐색
-    # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
+    # 상승/하락 다이버전스 탐색
     bull_close = analyze_bullish_divergence_close(
         symbol=symbol,
         timeframe=timeframe,
         rsi_raise_pct=rsi_raise_pct,
         min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct
+        price_diff_pct=price_diff_pct,
+        rsi_raise_pct_30=rsi_raise_pct_30,
+        min_volatility_30=min_volatility_30,
+        price_diff_pct_30=price_diff_pct_30
     )
 
     bear_close = analyze_bearish_divergence_close(
@@ -1315,13 +1475,16 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         timeframe=timeframe,
         rsi_drop_pct=rsi_drop_pct,
         min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct
+        price_diff_pct=price_diff_pct,
+        rsi_drop_pct_30=rsi_drop_pct_30,
+        min_volatility_30=min_volatility_30,
+        price_diff_pct_30=price_diff_pct_30
     )
 
     print(f"[{symbol} {timeframe}] BULL_CLOSE={bull_close}")
     print(f"[{symbol} {timeframe}] BEAR_CLOSE={bear_close}")
 
-    # CME 편차 조건: 신호가 있을 때만 확인
+    # CME 편차 조건은 신호가 있을 때만 확인
     if (bull_close and bull_close["signal"]) or (bear_close and bear_close["signal"]):
         try:
             cme_price = get_last_saturday_6_close()
@@ -1336,12 +1499,10 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         deviation = abs(prev_close - cme_price) / cme_price
 
         if deviation < 0.01:
-            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
-                  f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
             return
 
-        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 "
-              f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
 
     # MA18 추세 필터
     trend = ma18_4day_change_trend()
@@ -1351,43 +1512,27 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
         return
 
-    # 업비트 SOL 일봉 시가와 MA18/MA43 비교값 계산
+    # 업비트 일봉 시가와 MA18/MA43 비교값 계산
     upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
     yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
     upbit_today_open = get_upbit_today_open()
     upbit_yesterday_open = get_upbit_yesterday_open()
-
     # 어제 시가가 둘 다 위에 있었는지
-    yesterday_above_both = (
-        upbit_yesterday_open > yesterday_ma18 and
-        upbit_yesterday_open > yesterday_ma43
-    )
-
+    yesterday_above_both = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
     # 어제 시가가 둘 다 아래에 있었는지
-    yesterday_below_both = (
-        upbit_yesterday_open < yesterday_ma18 and
-        upbit_yesterday_open < yesterday_ma43
-    )
-
+    yesterday_below_both = upbit_yesterday_open < yesterday_ma18 and upbit_yesterday_open < yesterday_ma43
     # 오늘 시가가 둘 다 위로 돌파했는지
-    today_above_both = (
-        upbit_today_open > upbit_ma18 and
-        upbit_today_open > upbit_ma43
-    )
-
+    today_above_both = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
     # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
-    today_below_either = (
-        upbit_today_open < upbit_ma18 or
-        upbit_today_open < upbit_ma43
-    )
+    today_below_either = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
 
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
     sl_pct = 0.007
-    # 롱 신호 처리
+
+    # 롱 처리
     if bull_close and bull_close["signal"]:
-        # 업비트 조건: 어제 MA 위였는데 오늘 MA 아래로 깨지면 롱 금지
         if yesterday_above_both and today_below_either:
             print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
             return
@@ -1403,31 +1548,28 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
         tp_pct = tp_long_pct_2 if bull_close["range_volatility"] > 0.02 else tp_long_pct
         tp_price = bull_close["prev_close"] * (1 + tp_pct)
         sl_price = bull_close["prev_close"] * (1 - sl_pct)
+
         exchange.create_market_buy_order(symbol, amount)
 
-        # ──────────────────────────────────────────────────────────────
-        # 매수 실행 직후 시간 기록 (쿨다운용)
-        # ──────────────────────────────────────────────────────────────
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
-            last_xrp_long_1h = time.time()      # ← 시간 업데이트 추가 
-            last_eth_long_1h = time.time()      # ← 시간 업데이트 추가            
+            last_xrp_long_1h = time.time()
+            last_eth_long_1h = time.time()
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
-            last_xrp_long_15m = time.time()     # ← 시간 업데이트 추가
-            last_eth_long_15m = time.time()     # ← 시간 업데이트 추가
+            last_xrp_long_15m = time.time()
+            last_eth_long_15m = time.time()
         elif timeframe == '5m':
-            last_link_long_5m = time.time()             
+            last_link_long_5m = time.time()
 
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | mode={bull_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
-    # 숏 신호 처리
+    # 숏 처리
     if bear_close and bear_close["signal"]:
-        # 업비트 조건: 어제 MA 아래였는데 오늘 MA 위로 돌파하면 숏 금지
         if yesterday_below_both and today_above_both:
             print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 전환으로 숏 진입 금지")
             return
@@ -1440,27 +1582,26 @@ def trade_rsi_close_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_
             print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
             return
 
+        # 30봉 신호면 더 넓은 TP를 사용
         tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
         tp_price = bear_close["prev_close"] * (1 - tp_pct)
         sl_price = bear_close["prev_close"] * (1 + sl_pct)
+
         exchange.create_market_sell_order(symbol, amount)
 
-        # ──────────────────────────────────────────────────────────────
-        # 매수 실행 직후 시간 기록 (쿨다운용)
-        # ──────────────────────────────────────────────────────────────
         last_sol_trade_time = time.time()
         if timeframe == '1h':
             last_sol_buy_time_1h = time.time()
-            last_xrp_short_1h = time.time()     # ← 시간 업데이트 추가
+            last_xrp_short_1h = time.time()
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
-            last_xrp_short_15m = time.time()    # ← 시간 업데이트 추가
+            last_xrp_short_15m = time.time()
         elif timeframe == '5m':
-            last_link_short_5m = time.time()    # ← 추가            
+            last_link_short_5m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)        
-        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        place_sl_short(symbol, sl_price)
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | mode={bear_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
     print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
@@ -1776,7 +1917,7 @@ def trade_rsi_close_strategy_link(
             print(f"[{symbol} LINK_SHORT] CLOSE 기준 숏 진입 (추가 매도, TP 없음) | amount={amount} | price={current_price}")
 
 
-# eth 전략 ### 이평선 전략 추가 기준 전용 - 검증 필요 last_eth_long_1h, last_eth_long_15m 위에 복붙 추가 필요
+# eth 전략 ### 이평선 전략 추가 기준 전용 - eth 추매 조건은 삭제. 함수 이름 변경 필요
 def trade_rsi_close_strategy_eth_long_new(
     symbol,
     market_id,
@@ -1788,56 +1929,48 @@ def trade_rsi_close_strategy_eth_long_new(
     global last_eth_long_trade_time, last_eth_long_1h, last_eth_long_15m
 
     now = time.time()
-    
+
     # 전체 공통 60초 쿨다운
     if now - last_eth_long_trade_time < 60:
         print(f"[{symbol} ETH_LONG_NEW] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_eth_long_trade_time:.1f}초 경과)")
         return
-    
+
     # 1시간봉 전용 180분 쿨다운
     if timeframe == '1h' and now - last_eth_long_1h < 10800:
         minutes_ago = (now - last_eth_long_1h) / 60
         print(f"[{symbol} ETH_LONG_NEW 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
         return
+
     # 15분봉 전용 45분 쿨다운
     if timeframe == '15m' and now - last_eth_long_15m < 2700:
         minutes_ago = (now - last_eth_long_15m) / 60
         print(f"[{symbol} ETH_LONG_NEW 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
+
     # 마진/레버리지 세팅
     set_margin_and_leverage(symbol)
+
     # 계좌 잔고 체크
     current_balance = get_available_usdt()
     if current_balance < 2500 or current_balance > 12000:
         print(f"[{symbol} ETH_LONG_NEW] 계좌 잔고 {current_balance:.2f} USD (2000~8000 밖이므로 진입 금지)")
         return
-    
-    
-    # ETH 보유 수량으로 SOL 추가매수 허용 범위 계산
-    eth_position = get_position_amount('ETH/USDT')
-    n_eth = abs(eth_position)
-    sol_threshold = 15000 * n_eth if n_eth > 0 else None
 
-    # SOL 기존 롱 포지션 확인
+    # SOL 기존 롱 포지션만 확인
     sol_position = get_position_amount('SOL/USDT')
+    print(f"[{symbol} ETH_LONG_NEW] SOL 포지션={sol_position}")
 
-    print(f"[{symbol} ETH_LONG_NEW] ETH 포지션={eth_position}, SOL 포지션={sol_position}, 기준치={sol_threshold}")
-
-    # ETH 포지션이 없으면 기존 SOL 포지션이 있으면 추가 진입 금지
-    if sol_threshold is None and sol_position > 0:
-        print(f"[{symbol} ETH_LONG_NEW] ETH 포지션이 없어서 SOL 기존 롱 포지션 있으면 추가 진입 금지: {sol_position}개")
-        return
-
-    # ETH 포지션이 있으면 SOL 포지션이 있어도 기준치 초과할 때만 금지
-    if sol_threshold is not None and sol_position > sol_threshold:
-        print(f"[{symbol} ETH_LONG_NEW] SOL 포지션 {sol_position}가 기준 {sol_threshold}를 초과하여 추가 매수 금지")
+    # SOL 포지션이 있으면 추가 진입 금지
+    if sol_position > 0:
+        print(f"[{symbol} ETH_LONG_NEW] SOL 기존 롱 포지션이 있어서 추가 진입 금지: {sol_position}개")
         return
 
     # 확정봉 RSI/MA 데이터 조회
     df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
+
     # 주문 수량 계산
     available_usdt = current_balance
-    margin_to_use = available_usdt*0.5
+    margin_to_use = available_usdt * 0.5
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
@@ -1845,6 +1978,7 @@ def trade_rsi_close_strategy_eth_long_new(
     if amount <= 0:
         print(f"[{symbol} ETH_LONG_NEW] 주문 수량이 0 이라서 중단")
         return
+
     # 매수 신호 판단
     bull = analyze_bullish_divergence_close_new(
         symbol=symbol,
@@ -1854,21 +1988,18 @@ def trade_rsi_close_strategy_eth_long_new(
     )
 
     print(f"[{symbol} ETH_LONG_NEW] BULL_NEW={bull}")
+
     # 신호가 없으면 종료
     if not bull or not bull["signal"]:
         print(f"[{symbol} ETH_LONG_NEW] 진입 조건 없음")
         return
-    # ETH 기준으로 추가매수 허용 범위 초과 시 금지
-    if sol_threshold is not None and amount > sol_threshold:
-        print(f"[{symbol} ETH_LONG_NEW] 주문 수량 {amount}가 기준 {sol_threshold}를 초과하여 매수 금지")
-        return
-    # range_volatility에 따라 TP 분기 
+
+    # range_volatility에 따라 TP 분기
     tp_pct = tp_long_pct_2 if bull["range_volatility"] >= 0.015 else tp_long_pct
     tp_price = bull["prev_close"] * (1 + tp_pct)
-    sl_price = bull["prev_close"] * (1 - 0.007)    
-    # SOL 실제 매수
+    sl_price = bull["prev_close"] * (1 - 0.007)
 
-    
+    # SOL 실제 매수
     try:
         order = exchange.create_market_buy_order(
             symbol=symbol,
@@ -1877,22 +2008,19 @@ def trade_rsi_close_strategy_eth_long_new(
         print(f"[{symbol} ETH_LONG_NEW] BUY ORDER RESULT={order}")
     except Exception as e:
         print(f"[{symbol} ETH_LONG_NEW] 주문 실패: {e}")
-        return  
-        
+        return
+
     # 쿨다운 시간 갱신
     last_eth_long_trade_time = time.time()
     if timeframe == '1h':
         last_eth_long_1h = time.time()
     elif timeframe == '15m':
         last_eth_long_15m = time.time()
-    # 포지션이 없을 때만 TP/SL 설정
-    current_sol_position = get_position_amount('SOL/USDT')
-    if current_sol_position == 0:
-        place_tp_long('SOL/USDT', amount, tp_price)
-        place_sl_long('SOL/USDT', sl_price)
-        print(f"[{symbol} ETH_LONG_NEW] SOL 포지션 없음, TP/SL 설정")
-    else:
-        print(f"[{symbol} ETH_LONG_NEW] SOL 포지션 있음, TP/SL 미설정")
+
+    # TP/SL 바로 설정
+    place_tp_long('SOL/USDT', amount, tp_price)
+    place_sl_long('SOL/USDT', sl_price)
+    print(f"[{symbol} ETH_LONG_NEW] TP/SL 설정 완료")
 
     print(f"[{symbol} ETH_LONG_NEW] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
 
@@ -1968,13 +2096,10 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
     elif timeframe == '15m':
         last_50ma_close_15m = time.time()
 
-    current_sol_position = get_position_amount('SOL/USDT')
-    if current_sol_position == 0:
-        place_tp_long('SOL/USDT', amount, tp_price)
-        place_sl_long('SOL/USDT', sl_price)
-        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 없음, TP/SL 설정")
-    else:
-        print(f"[{symbol} 50MA_CLOSE] SOL 포지션 있음, TP/SL 미설정")
+
+    place_tp_long('SOL/USDT', amount, tp_price)
+    place_sl_long('SOL/USDT', sl_price)
+    print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
     print(f"[{symbol} 50MA_CLOSE] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
     
@@ -2053,6 +2178,7 @@ while True:
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
+        # 1시간봉 먼저 평가
         if not has_position(MARKET_ID_SOL):
             trade_rsi_close_strategy(
                 symbol=SOL_SYMBOL,
@@ -2064,12 +2190,15 @@ while True:
                 tp_short_pct_2=0.015,
                 min_volatility=0.0025,
                 price_diff_pct=0.003,
-                rsi_raise_pct=0.003, # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자
-                rsi_drop_pct=0.003 # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자
+                rsi_raise_pct=0.003,
+                rsi_drop_pct=0.003,
+                min_volatility_30=0.001,
+                price_diff_pct_30=0.005,
+                rsi_raise_pct_30=0.001,
+                rsi_drop_pct_30=0.001
             )
 
-
-        # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 15 분봉)
+        # 1시간봉에서 포지션이 안 생겼으면 15분봉 평가
         if not has_position(MARKET_ID_SOL):
             trade_rsi_close_strategy(
                 symbol=SOL_SYMBOL,
@@ -2080,9 +2209,13 @@ while True:
                 tp_short_pct=0.01,
                 tp_short_pct_2=0.015,
                 min_volatility=0.0015,
-                price_diff_pct=0.003, # 0.2% 로 바꾸면 노이즈 많이 낄려나?
-                rsi_raise_pct=0.003, # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 작게 가져가자
-                rsi_drop_pct=0.003  # 매수 제약룰이 있으니 평소횡보장일거란 말이지. 그러니깐 변동성이 작으니깐 rsi 작게 가져가자 0.3%
+                price_diff_pct=0.003,
+                rsi_raise_pct=0.003,
+                rsi_drop_pct=0.003,
+                min_volatility_30=0.001,
+                price_diff_pct_30=0.005,
+                rsi_raise_pct_30=0.001,
+                rsi_drop_pct_30=0.001
             )
 
         # ─────────────────────────────────────────
