@@ -2129,45 +2129,6 @@ while True:
     try:
         now = now_kst()
 
-        # 09:00 KST SOL 기존 전략 (하루 1 회)
-        if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
-            last_run_date = now.date()
-            if not has_position(MARKET_ID_SOL):
-                trade_once_sol()
-
-        # 1시간봉 전략
-        
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='1h',
-                tp_long_pct=0.014, # 일반 익절률
-                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
-                tp_short_pct=0.01, 
-                tp_short_pct_2=0.015, # 변동성 2% 이상 익절률
-                min_volatility=0.0025,
-                price_diff_pct=0.0005,
-                min_range_volatility=0.01 #15봉 변동성 1% 미만시 진입 금지 
-            )
-            
-
-
-        # 15분봉 전략
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m',
-                tp_long_pct=0.014, # 일반 익절률
-                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
-                tp_short_pct=0.01, 
-                tp_short_pct_2=0.015, # 변동성 2% 이상
-                min_volatility=0.002,
-                price_diff_pct=0.0005,  # ← 추가
-                min_range_volatility=0.01   #15봉 변동성 1% 미만시 진입 금지             
-            )
-
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
@@ -2211,6 +2172,74 @@ while True:
                 rsi_drop_pct_30=0.001
             )
 
+
+
+# 이평선 매물대 전략, eth는 추가매수용 없어도 매수는 됨
+        sol_position = get_position_amount('SOL/USDT')
+
+        if sol_position == 0: # 이렇게 되어 있으면 추매는 안되겠다. 얘는 추매용으로 쓰지말자 그냥,,
+            trade_rsi_close_strategy_eth_long_new(
+                symbol='SOL/USDT',
+                market_id='SOLUSDT',
+                timeframe='1h',
+                tp_long_pct=0.014,
+                tp_long_pct_2=0.02,
+                min_volatility=0.0015
+            )
+
+            trade_rsi_close_strategy_eth_long_new(
+                symbol='SOL/USDT',
+                market_id='SOLUSDT',
+                timeframe='15m',
+                tp_long_pct=0.012,
+                tp_long_pct_2=0.018,
+                min_volatility=0.0015
+            )
+            # 50ma 단타왕 전략 SOL 
+            trade_50ma_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m'
+            )
+
+            trade_50ma_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='5m'
+            )
+
+        time.sleep(1) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
+        # 1시간봉 전략
+        
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='1h',
+                tp_long_pct=0.014, # 일반 익절률
+                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
+                tp_short_pct=0.01, 
+                tp_short_pct_2=0.015, # 변동성 2% 이상 익절률
+                min_volatility=0.0025,
+                price_diff_pct=0.0005,
+                min_range_volatility=0.01 #15봉 변동성 1% 미만시 진입 금지 
+            )
+            
+        # 15분봉 전략
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m',
+                tp_long_pct=0.014, # 일반 익절률
+                tp_long_pct_2=0.02, # 변동성 2% 이상 익절률
+                tp_short_pct=0.01, 
+                tp_short_pct_2=0.015, # 변동성 2% 이상
+                min_volatility=0.002,
+                price_diff_pct=0.0005,  # ← 추가
+                min_range_volatility=0.01   #15봉 변동성 1% 미만시 진입 금지             
+            )
+            
         # XRP 보유 시 추매전략
         xrp_position = get_position_amount('XRP/USDT')
 
@@ -2298,43 +2327,16 @@ while True:
                 rsi_drop_pct=0.01,
                 min_range_volatility=0.015
             )
-
-# 이평선 매물대 전략, eth는 추가매수용 없어도 매수는 됨
-        sol_position = get_position_amount('SOL/USDT')
-
-        if sol_position == 0: # 이렇게 되어 있으면 추매는 안되겠다. 얘는 추매용으로 쓰지말자 그냥,,
-            trade_rsi_close_strategy_eth_long_new(
-                symbol='SOL/USDT',
-                market_id='SOLUSDT',
-                timeframe='1h',
-                tp_long_pct=0.014,
-                tp_long_pct_2=0.02,
-                min_volatility=0.0015
-            )
-
-            trade_rsi_close_strategy_eth_long_new(
-                symbol='SOL/USDT',
-                market_id='SOLUSDT',
-                timeframe='15m',
-                tp_long_pct=0.012,
-                tp_long_pct_2=0.018,
-                min_volatility=0.0015
-            )
-            # 50ma 단타왕 전략 SOL 
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m'
-            )
-
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='5m'
-            )
+            
+        # 09:00 KST SOL 기존 전략 (하루 1 회)
+        if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
+            last_run_date = now.date()
+            if not has_position(MARKET_ID_SOL):
+                trade_once_sol()
+                                        
 
 # 코드 도는시간7초, +타임슬립 : 쿨타임
-        time.sleep(23)  # 30 초 간격
+        time.sleep(22)  # 30 초 간격
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
