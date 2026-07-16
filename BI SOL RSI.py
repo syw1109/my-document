@@ -409,8 +409,8 @@ def trade_once_sol():
     tp_price_long  = current_price * 1.015
     tp_price_short = current_price * 0.985
     
-    sl_price_long  = current_price * 0.993 
-    sl_price_short = current_price * 1.007   
+    sl_price_long  = current_price * 0.9935 
+    sl_price_short = current_price * 1.0065  
 
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
@@ -754,8 +754,8 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
-    # 손절 주문 0.7%
-    sl_pct = 0.007
+    # 손절 주문 0.65%
+    sl_pct = 0.0065
     
     # 롱 신호 처리
     if bull and bull["signal"]:
@@ -1156,12 +1156,12 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     strong_ma18 = trend["up_3days"] or vol_trend["all_up_6days"]
 
     last_11 = df.iloc[-11:]
-    last_21 = df.iloc[-21:]
+    last_21 = df.iloc[-16:] # 직전 15개봉만 정배열 조건 만족하면 되게 하기위해 21 -> 16으로 수정
 
     # 정배열 조건 확인 함수
     # ma50 > vwma100*0.9993 > ma200 이 모든 봉에서 유지되는지 검사
     def is_bull_stack(subdf):
-        return (subdf['ma50'] > subdf['vwma100']*0.9993).all() and (subdf['vwma100'] > subdf['ma200']).all()
+        return (subdf['ma50'] > subdf['vwma100']*1.002).all() and (subdf['vwma100'] > subdf['ma200']).all()
 
     # 상승장이면 last11 을 쓰고 아니면 21을 쓴다
     cond_ma = is_bull_stack(last_11) if strong_ma18 else is_bull_stack(last_21)
@@ -1334,14 +1334,14 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
         cond_prev1 = prev_close1 > ma50 * 1.0003
         cond_prev2 = prev_close2 < ma50_2        
-        cond_range_1 = ((prev_close1 - low_20) / prev_close1) < 0.01
+        cond_range_1 = ((prev_close1 - low_20) / prev_close1) < 0.01 # 진입시  저가 대비 진입가 변동성
         cond_range_2 = ((prev_close1 - low_20) / prev_close1) < 0.008
 
-        case1_stack = ma50 < vwma100 < ma200
-        case2_stack = ma50 < ma200 < vwma100
+        case1_stack = ma50 < vwma100 < ma200 # 완전한 정배열
+        case2_stack = ma50 < ma200 < vwma100 #불완전 정배열
 
-        case1_signal = case1_stack and cond_prev1 and cond_prev2 and cond_range_1
-        case2_signal = case2_stack and cond_prev1 and cond_prev2 and cond_range_2
+        case1_signal = case1_stack and cond_prev1 and cond_prev2 and cond_range_1 # case1 완전 정배열에서는 오차 1%이내까지 허용
+        case2_signal = case2_stack and cond_prev1 and cond_prev2 and cond_range_2 #case2 불완전 정배열 일때는 0.8% 이내까지만 
 
         signal = case1_signal or case2_signal
 
@@ -1351,7 +1351,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
             timeframe_case = "15m_case1"
         elif case2_signal:
             tp_pct = 0.01
-            sl_pct = 0.007
+            sl_pct = 0.006
             timeframe_case = "15m_case2"
         else:
             tp_pct = None
@@ -1529,7 +1529,7 @@ def trade_rsi_close_strategy(
     print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
     print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
-    sl_pct = 0.007
+    sl_pct = 0.006
 
     # 롱 처리
     if bull_close and bull_close["signal"]:
@@ -1719,7 +1719,7 @@ def trade_rsi_close_strategy_xrp_sol(
             return
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bull["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bull["prev_close"] * (1 + tp_pct)
-        sl_price = bull["prev_close"] * (1 - 0.007)
+        sl_price = bull["prev_close"] * (1 - 0.0065)
         exchange.create_market_buy_order(symbol, amount)
         if timeframe == '1h':
             last_xrp_long_1h = time.time()
@@ -1751,7 +1751,7 @@ def trade_rsi_close_strategy_xrp_sol(
             return
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bear["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bear["prev_close"] * (1 - tp_pct)
-        sl_price = bear["prev_close"] * (1 + 0.008)
+        sl_price = bear["prev_close"] * (1 + 0.0065)
         exchange.create_market_sell_order(symbol, amount)
         if timeframe == '1h':
             last_xrp_short_1h = time.time()
@@ -1759,12 +1759,9 @@ def trade_rsi_close_strategy_xrp_sol(
         elif timeframe == '15m':
             last_xrp_short_15m = time.time()
             last_xrp_short_trade_time = time.time()
-        if current_sol == 0:
-            place_tp_short(symbol, amount, tp_price)
-            place_sl_short(symbol, sl_price)
-            print(f"[{symbol} XRP_SHORT] TP/SL 설정")
-        else:
-            print(f"[{symbol} XRP_SHORT] 추가매도 TP 없음")
+        place_tp_long('SOL/USDT', amount, tp_price)
+        place_sl_long('SOL/USDT', sl_price)
+        print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
 def trade_rsi_close_strategy_link(
     symbol,
@@ -1865,7 +1862,7 @@ def trade_rsi_close_strategy_link(
 
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bull["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bull["prev_close"] * (1 + tp_pct)
-        sl_price = bull["prev_close"] * (1 - 0.007)
+        sl_price = bull["prev_close"] * (1 - 0.006)
 
         exchange.create_market_buy_order(symbol, amount)
 
@@ -1901,7 +1898,7 @@ def trade_rsi_close_strategy_link(
 
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bear["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bear["prev_close"] * (1 - tp_pct)
-        sl_price = bear["prev_close"] * (1 + 0.008)
+        sl_price = bear["prev_close"] * (1 + 0.0065)
 
         exchange.create_market_sell_order(symbol, amount)
 
@@ -1909,13 +1906,9 @@ def trade_rsi_close_strategy_link(
         if timeframe == '5m':
             last_link_short_5m = time.time()
 
-        if current_sol == 0:
-            place_tp_short(symbol, amount, tp_price)
-            place_sl_short(symbol, sl_price)
-            print(f"[{symbol} LINK_SHORT] CLOSE 기준 숏 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
-        else:
-            print(f"[{symbol} LINK_SHORT] CLOSE 기준 숏 진입 (추가 매도, TP 없음) | amount={amount} | price={current_price}")
-
+        place_tp_long('SOL/USDT', amount, tp_price)
+        place_sl_long('SOL/USDT', sl_price)
+        print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
 # eth 전략 ### 이평선 전략 추가 기준 전용 - eth 추매 조건은 삭제. 함수 이름 변경 필요
 def trade_rsi_close_strategy_eth_long_new(
@@ -1997,7 +1990,7 @@ def trade_rsi_close_strategy_eth_long_new(
     # range_volatility에 따라 TP 분기
     tp_pct = tp_long_pct_2 if bull["range_volatility"] >= 0.015 else tp_long_pct
     tp_price = bull["prev_close"] * (1 + tp_pct)
-    sl_price = bull["prev_close"] * (1 - 0.007)
+    sl_price = bull["prev_close"] * (1 - 0.006)
 
     # SOL 실제 매수
     try:
@@ -2218,11 +2211,6 @@ while True:
                 rsi_drop_pct_30=0.001
             )
 
-        # ─────────────────────────────────────────
-        # ★ 핵심: 기본 전략 후 2 초 대기
-        # ─────────────────────────────────────────
-        time.sleep(1)
-
         # XRP 보유 시 추매전략
         xrp_position = get_position_amount('XRP/USDT')
 
@@ -2345,8 +2333,8 @@ while True:
                 timeframe='5m'
             )
 
-
-        time.sleep(25)  # 25 초 간격
+# 코드 도는시간7초, +타임슬립 : 쿨타임
+        time.sleep(23)  # 30 초 간격
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
