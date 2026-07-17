@@ -865,8 +865,8 @@ def analyze_bullish_divergence_close(
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    # 30봉 기준까지 보려면 최소 31개 이상은 필요함
-    if len(df) < 31:
+    # 30봉 기준까지 보려면 최소 35개 이상은 필요함
+    if len(df) < 35:
         return None
 
     # 직전 확정봉
@@ -917,17 +917,8 @@ def analyze_bullish_divergence_close(
     # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
     signal = signal_15 or signal_30
 
-    # 어떤 조건으로 신호가 났는지 기록
-    if signal_15:
-        mode = "15"
-    elif signal_30:
-        mode = "30"
-    else:
-        mode = None
-
     return {
         "signal": signal,
-        "mode": mode,
         "side": "long",
 
         # 15봉 기준 정보
@@ -1026,17 +1017,8 @@ def analyze_bearish_divergence_close(
     # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
     signal = signal_15 or signal_30
 
-    # 어떤 조건으로 신호가 났는지 기록
-    if signal_15:
-        mode = "15"
-    elif signal_30:
-        mode = "30"
-    else:
-        mode = None
-
     return {
         "signal": signal,
-        "mode": mode,
         "side": "short",
 
         # 15봉 기준 정보
@@ -1159,7 +1141,7 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     last_21 = df.iloc[-16:] # 직전 15개봉만 정배열 조건 만족하면 되게 하기위해 21 -> 16으로 수정
 
     # 정배열 조건 확인 함수
-    # ma50 > vwma100*0.9993 > ma200 이 모든 봉에서 유지되는지 검사
+    # ma50 > vwma100*0.9993 > ma200 이 모든 봉에서 유지되는지 검사 -> 노이즈로 ma50 > vwma100*1.002 > ma200 수정 확실한 정배열
     def is_bull_stack(subdf):
         return (subdf['ma50'] > subdf['vwma100']*1.002).all() and (subdf['vwma100'] > subdf['ma200']).all()
 
@@ -1273,12 +1255,12 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
     df = df_cache.copy()
 
     if timeframe == '5m':
-        if len(df) < 31:
+        if len(df) < 52:
             return None
 
         prev = df.iloc[-1]
         prev2 = df.iloc[-2]
-        low_30 = df.iloc[-31:-1]['close'].min()
+        low_50 = df.iloc[-51:-1]['low'].min() # 직전 50봉 low값 보기
 
         ma50 = float(prev['ma50'])
         ma50_2 = float(prev2['ma50'])        
@@ -1290,7 +1272,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         cond_stack = ma50 < vwma100 < ma200
         cond_prev1 = prev_close1 > ma50 * 1.0003
         cond_prev2 = prev_close2 < ma50_2
-        cond_range = ((prev_close1 - low_30) / prev_close1) < 0.0065
+        cond_range = ((prev_close1 - low_50) / prev_close1) < 0.006 # 0.6% 로 이내로 수정 
 
         signal = cond_stack and cond_prev1 and cond_prev2 and cond_range
 
@@ -1306,7 +1288,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
             "ma50_2": ma50_2,                      
             "ma200": ma200,
             "vwma100": float(prev['vwma100']),
-            "lowest_close": float(low_30),
+            "lowest_close": float(low_50),
             "stack_condition": cond_stack,
             "prev1_condition": cond_prev1,
             "prev2_condition": cond_prev2,
@@ -2335,8 +2317,8 @@ while True:
                 trade_once_sol()
                                         
 
-# 코드 도는시간7초, +타임슬립 : 쿨타임
-        time.sleep(22)  # 30 초 간격
+# 코드 도는시간8초, +타임슬립 : 쿨타임
+        time.sleep(22)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
