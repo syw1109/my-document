@@ -1272,7 +1272,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         cond_stack = ma50 < vwma100 < ma200
         cond_prev1 = prev_close1 > ma50*1.001
         cond_prev2 = prev_close2 < ma50_2
-        cond_range = ((prev_close1 - low_50) / prev_close1) < 0.006 # 0.6% 로 이내로 수정 
+        cond_range = ((prev_close1 - low_50) / prev_close1) < 0.0062 # 0.62% 로 이내로 수정 
 
         signal = cond_stack and cond_prev1 and cond_prev2 and cond_range
 
@@ -2190,7 +2190,7 @@ while True:
                 timeframe='5m'
             )
 
-        time.sleep(1) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
+        time.sleep(3) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
         # 1시간봉 전략
         
         if not has_position(MARKET_ID_SOL):
@@ -2318,7 +2318,7 @@ while True:
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
-        time.sleep(22)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감
+        time.sleep(15)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
