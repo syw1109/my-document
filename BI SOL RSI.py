@@ -1270,7 +1270,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         prev_close2 = float(prev2['close'])
 
         cond_stack = ma50 < vwma100 < ma200
-        cond_prev1 = prev_close1 > ma50*1.001
+        cond_prev1 = prev_close1 > ma50
         cond_prev2 = prev_close2 < ma50_2
         cond_range = ((prev_close1 - low_50) / prev_close1) < 0.0062 # 0.62% 로 이내로 수정 
 
@@ -2318,7 +2318,7 @@ while True:
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
-        time.sleep(15)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
+        time.sleep(16)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
