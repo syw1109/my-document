@@ -1270,9 +1270,9 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         prev_close2 = float(prev2['close'])
 
         cond_stack = ma50 < vwma100 < ma200
-        cond_prev1 = prev_close1 > ma50
+        cond_prev1 = prev_close1 >= ma50
         cond_prev2 = prev_close2 < ma50_2
-        cond_range = ((prev_close1 - low_50) / prev_close1) < 0.0062 # 0.62% 로 이내로 수정 
+        cond_range = ((prev_close1 - low_50) / prev_close1) < 0.006 # 0.6% 로 이내로 수정 
 
         signal = cond_stack and cond_prev1 and cond_prev2 and cond_range
 
@@ -1300,12 +1300,12 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         }
 
     if timeframe == '15m':
-        if len(df) < 21:
+        if len(df) < 31:
             return None
 
         prev = df.iloc[-1]
         prev2 = df.iloc[-2]
-        low_20 = df.iloc[-21:-1]['close'].min()
+        low_20 = df.iloc[-26:-1]['low'].min()
 
         ma50 = float(prev['ma50'])
         ma50_2 = float(prev2['ma50'])        
@@ -1314,7 +1314,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         prev_close1 = float(prev['close'])
         prev_close2 = float(prev2['close'])
 
-        cond_prev1 = prev_close1 > ma50 * 1.0003
+        cond_prev1 = prev_close1 >= ma50
         cond_prev2 = prev_close2 < ma50_2        
         cond_range_1 = ((prev_close1 - low_20) / prev_close1) < 0.01 # 진입시  저가 대비 진입가 변동성
         cond_range_2 = ((prev_close1 - low_20) / prev_close1) < 0.008
