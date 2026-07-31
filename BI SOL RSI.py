@@ -353,7 +353,7 @@ def trade_once_sol():
     set_margin_and_leverage(SOL_SYMBOL)
 
     now = now_kst()
-    if now.weekday() in [5]: # 3: 목, 4: 금, 5:토, 목요일, 금요일은 거래 재개
+    if now.weekday() in [4, 5]: # 3: 목, 4: 금, 5:토, 목요일, 금요일은 거래 막자. 마지막날이라서 변동성 확대 우려
         print("금요일/토요일은 매매 금지")
         return
 
@@ -409,8 +409,8 @@ def trade_once_sol():
     tp_price_long  = current_price * 1.015
     tp_price_short = current_price * 0.985
     
-    sl_price_long  = current_price * 0.9935 
-    sl_price_short = current_price * 1.0065  
+    sl_price_long  = current_price * 0.93
+    sl_price_short = current_price * 1.07 # cme 전략이 너무 잦은 손절이 나가서 7%로 여유롭게 둠. 발산장 아니면 위기 피하지
 
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
@@ -1432,14 +1432,14 @@ def trade_rsi_close_strategy(
         return
 
     # timeframe 별 쿨다운
-    if timeframe == '1h' and now - last_sol_buy_time_1h < 3600:
+    if timeframe == '1h' and now - last_sol_buy_time_1h < 7200:
         minutes_ago = (now - last_sol_buy_time_1h) / 60
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (120 분 내 중복매수 금지)")
         return
 
-    if timeframe == '15m' and now - last_sol_buy_time_15m < 900:
+    if timeframe == '15m' and now - last_sol_buy_time_15m < 1800:
         minutes_ago = (now - last_sol_buy_time_15m) / 60
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (30 분 내 중복매수 금지)")
         return
 
     set_margin_and_leverage(symbol)
@@ -2004,7 +2004,7 @@ def trade_rsi_close_strategy_eth_long_new(
         print(f"[{symbol} ETH_LONG_NEW] 진입 조건 없음")
         return
 
-    if bull["range_volatility"] < 0.008: # 직전 15봉 변동성 0.8% 미만시 진입 안함
+    if bull["range_volatility"] < 0.0105: # 직전 15봉 변동성 1.05% 미만시 진입 안함
         print(f"[{symbol} ETH_LONG_NEW] range_volatility {bull['range_volatility']*100:.2f}% 미만으로 진입 금지")
         return
 
