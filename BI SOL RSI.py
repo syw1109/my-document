@@ -1630,6 +1630,11 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         ma200 = float(prev['ma200'])
         vwma100 = float(prev['vwma100'])
         prev_close = float(prev['close'])
+        
+        # prev2 기준 ma20, ma25
+        ma20_prev2 = float(prev2['ma20'])
+        ma25_prev2 = float(prev2['ma25'])
+        prev2_close = float(prev2['close'])        
 
         # 조건 1: 직전봉 캔들의 변동성 < 0.6%
         cond_vol = abs(prev['open'] - prev['close']) / prev['open'] < 0.006
@@ -1649,8 +1654,11 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         # 조건 8: 직전봉 close * 1.005 < ma200
         cond_ma200_gap = prev_close * 1.005 < ma200
 
+        #조건9: prev2 종가는 ma20, ma25 중 하나보다는 아래
+        cond_prev2_below_one_of_20_25 = (prev2_close < ma20_prev2) or (prev2_close < ma25_prev2)
+
         # 최종 시그널
-        signal = cond_vol and cond_ma50_vwma and cond_ma20_25 and cond_close_above_20_25 and cond_ma50_under_200 and cond_ma200_gap
+        signal = cond_vol and cond_ma50_vwma and cond_ma20_25 and cond_close_above_20_25 and cond_ma50_under_200 and cond_ma200_gap and cond_prev2_below_one_of_20_25
 
         # TP: min(ma200, 2%)
         tp_pct = 0.02
@@ -1679,6 +1687,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
             "cond_close_above_20_25": cond_close_above_20_25,
             "cond_ma50_under_200": cond_ma50_under_200,
             "cond_ma200_gap": cond_ma200_gap,
+            "cond_prev2_below_one_of_20_25": cond_prev2_below_one_of_20_25,            
             "tp_pct": tp_pct,
             "sl_pct": sl_pct,
             "tp_price": tp_price,
