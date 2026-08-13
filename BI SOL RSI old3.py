@@ -847,7 +847,6 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
 
 
 #---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
-# ---------------- bullish divergence ----------------
 def analyze_bullish_divergence_close(
     symbol,
     timeframe,
@@ -861,166 +860,87 @@ def analyze_bullish_divergence_close(
     """
     상승 다이버전스 판단 함수.
 
-    - 기존 15봉 low 기준 조건
-    - 추가 15봉 close 기준 조건
-    - 기존 30봉 조건
-    - 15봉 low 기준, 15봉 close 기준, 30봉 중
-      하나라도 충족하면 signal=True
+    - 기존 15봉 조건을 먼저 계산한다.
+    - 추가로 30봉 조건도 따로 계산한다.
+    - 15봉 또는 30봉 중 하나라도 충족하면 signal=True.
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    # 30봉 기준까지 보려면 최소 35개 이상 필요
-    if df is None or len(df) < 35:
+    # 30봉 기준까지 보려면 최소 35개 이상은 필요함
+    if len(df) < 35:
         return None
 
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
+    # 15봉 기준:
+    # 직전봉을 제외한 최근 15개 구간을 기준으로 저점/RSI를 구한다.
+    base_15 = df.iloc[-16:-2] # 최대 하락 저점 구하는목적
+    base_16 = df.iloc[-17:-1] # 변동성 구하는 목적
+
+    # 30봉 기준:
+    # 직전봉~15개봉을 제외한 최근 30개 구간을 기준으로 저점/RSI를 구한다.
+    base_30 = df.iloc[-31:-16] # 최대 하락 및 RSI 저점 구하는목적
+    base_31 = df.iloc[-32:-1] # 변동성 구하는 목적
+
+    #공통 조건 음봉
+    cond_bearish_candle = prev_candle['open'] > prev_candle['close']
     # -------------------------
-    # 기준 구간
+    # 15봉 조건
     # -------------------------
-    # 직전봉을 제외한 최근 기준 구간
-    base_15 = df.iloc[-16:-2]
+    lowest_close = base_15['low'].min()
+    lowest_rsi = base_15['rsi'].min()
 
-    # 변동성 계산용 구간
-    base_16 = df.iloc[-17:-1]
+    range_high = base_16['close'].max()
+    range_low = base_16['close'].min()
+    range_volatility = (range_high - range_low) / range_high
 
-    # 30봉 기준 구간
-    base_30 = df.iloc[-31:-16]
-    base_31 = df.iloc[-32:-1]
+    cond_price_15 = prev_candle['low'] < lowest_close * (1 - price_diff_pct)
+    cond_rsi_15 = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
+    cond_volatility_15 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+    
 
-    # 공통 조건: 직전봉 음봉
-    cond_bearish_candle = (
-        prev_candle['open'] > prev_candle['close']
-    )
+    signal_15 = cond_price_15 and cond_rsi_15 and cond_volatility_15 and cond_bearish_candle
 
-    # =================================================
-    # 15봉 기준 - low 가격 기준
-    # =================================================
-    lowest_low_15 = base_15['low'].min()
-    lowest_rsi_15 = base_15['rsi'].min()
-
-    range_high_15 = base_16['close'].max()
-    range_low_15 = base_16['close'].min()
-    range_volatility_15 = (
-        (range_high_15 - range_low_15) / range_high_15
-    )
-
-    cond_price_15 = (
-        prev_candle['low']
-        < lowest_low_15 * (1 - price_diff_pct)
-    )
-
-    cond_rsi_15 = (
-        prev_candle['rsi']
-        >= lowest_rsi_15 * (1 + rsi_raise_pct)
-    )
-
-    cond_volatility_15 = (
-        abs(prev_candle['close'] - prev_candle['open'])
-        / prev_candle['open']
-        >= min_volatility
-    )
-
-    signal_15 = (
-        cond_price_15
-        and cond_rsi_15
-        and cond_volatility_15
-        and cond_bearish_candle
-    )
-
-    # =================================================
-    # 15봉 기준 - close 가격 기준 추가 조건
-    # =================================================
-    lowest_close_15_2 = base_15['close'].min()
-
-    # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15봉 최저 종가보다 0.3% 이상 낮아야 함
-    cond_price_15_2 = (
-        prev_candle['close']
-        < lowest_close_15_2 * (1 - 0.003)
-    )
-
-    # close 기준 변동성 조건:
-    # range_volatility가 0.3% 이상이어야 함
-    cond_range_volatility_15_2 = (
-        range_volatility_15 >= 0.003
-    )
-
-    signal_15_2 = (
-        cond_price_15_2
-        and cond_range_volatility_15_2
-        and cond_rsi_15
-        and cond_volatility_15
-        and cond_bearish_candle
-    )
-
-    # =================================================
-    # 30봉 기준
-    # =================================================
-    lowest_low_30 = base_30['low'].min()
+    # -------------------------
+    # 30봉 조건
+    # -------------------------
+    lowest_close_30 = base_30['low'].min()
     lowest_rsi_30 = base_30['rsi'].min()
 
     range_high_30 = base_31['close'].max()
     range_low_30 = base_31['close'].min()
-    range_volatility_30 = (
-        (range_high_30 - range_low_30) / range_high_30
-    )
+    range_volatility_30 = (range_high_30 - range_low_30) / range_high_30
 
-    cond_price_30 = (
-        prev_candle['low']
-        < lowest_low_30 * (1 - price_diff_pct_30)
-    )
+    cond_price_30 = prev_candle['low'] < lowest_close_30 * (1 - price_diff_pct_30)
+    cond_rsi_30 = prev_candle['rsi'] >= lowest_rsi_30 * (1 + rsi_raise_pct_30)
+    cond_volatility_30 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility_30
 
-    cond_rsi_30 = (
-        prev_candle['rsi']
-        >= lowest_rsi_30 * (1 + rsi_raise_pct_30)
-    )
+    signal_30 = cond_price_30 and cond_rsi_30 and cond_volatility_30 and cond_bearish_candle
 
-    cond_volatility_30 = (
-        abs(prev_candle['close'] - prev_candle['open'])
-        / prev_candle['open']
-        >= min_volatility_30
-    )
-
-    signal_30 = (
-        cond_price_30
-        and cond_rsi_30
-        and cond_volatility_30
-        and cond_bearish_candle
-    )
-
-    # 15봉 low 기준 또는 15봉 close 기준 또는 30봉 기준
-    signal = signal_15 or signal_15_2 or signal_30
+    # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
+    signal = signal_15 or signal_30
 
     return {
         "signal": signal,
         "side": "long",
 
-        # 15봉 low 기준 정보
-        "lowest_low_15": float(lowest_low_15),
-        "lowest_rsi_15": float(lowest_rsi_15),
+        # 15봉 기준 정보
+        "lowest_close": float(lowest_close),
+        "lowest_rsi": float(lowest_rsi),
         "price_condition_15": cond_price_15,
         "rsi_condition_15": cond_rsi_15,
         "volatility_condition_15": cond_volatility_15,
-        "range_volatility_15": float(range_volatility_15),
-        "signal_15": signal_15,
-
-        # 15봉 close 기준 추가 정보
-        "lowest_close_15_2": float(lowest_close_15_2),
-        "price_condition_15_2": cond_price_15_2,
-        "range_volatility_condition_15_2": cond_range_volatility_15_2,
-        "signal_15_2": signal_15_2,
+        "range_volatility_15": float(range_volatility),
 
         # 30봉 기준 정보
-        "lowest_low_30": float(lowest_low_30),
+        "lowest_close_30": float(lowest_close_30),
         "lowest_rsi_30": float(lowest_rsi_30),
         "price_condition_30": cond_price_30,
         "rsi_condition_30": cond_rsi_30,
         "volatility_condition_30": cond_volatility_30,
         "range_volatility_30": float(range_volatility_30),
-        "signal_30": signal_30,
 
         # 공통 직전봉 정보
         "prev_open": float(prev_candle['open']),
@@ -1032,7 +952,6 @@ def analyze_bullish_divergence_close(
     }
 
 
-# ---------------- bearish divergence ----------------
 def analyze_bearish_divergence_close(
     symbol,
     timeframe,
@@ -1046,113 +965,84 @@ def analyze_bearish_divergence_close(
     """
     하락 다이버전스 판단 함수.
 
-    - 기존 15봉 high 기준 조건
-    - 추가 15봉 close 기준 조건
-    - 15봉 high 기준 또는 15봉 close 기준 중
-      하나라도 충족하면 signal=True
+    - 기존 15봉 조건을 먼저 계산한다.
+    - 추가로 30봉 조건도 따로 계산한다.
+    - 15봉 또는 30봉 중 하나라도 충족하면 signal=True.
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if df is None or len(df) < 31:
+    # 30봉 기준까지 보려면 최소 31개 이상은 필요함
+    if len(df) < 31:
         return None
 
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
     # 15봉 기준
-    base_15 = df.iloc[-11:-2]
-
-    # 변동성 계산용 구간
+    base_15 = df.iloc[-11:-2] # 숏은 최근 10개봉만 보기
     base_16 = df.iloc[-17:-1]
 
-    # 공통 조건: 직전봉 양봉
-    cond_bullish_candle = (
-        prev_candle['open'] < prev_candle['close']
-    )
+    cond_bullish_candle = prev_candle['open'] < prev_candle['close']
 
-    # =================================================
-    # 15봉 기준 - high 가격 기준
-    # =================================================
-    highest_high_15 = base_15['high'].max()
-    highest_rsi_15 = base_15['rsi'].max()
+    # # 30봉 기준
+    # base_30 = df.iloc[-31:-2]
+    # base_31 = df.iloc[-32:-1]
 
-    range_high_15 = base_16['close'].max()
-    range_low_15 = base_16['close'].min()
-    range_volatility_15 = (
-        (range_high_15 - range_low_15) / range_high_15
-    )
+    # -------------------------
+    # 15봉 조건
+    # -------------------------
+    highest_close = base_15['high'].max()
+    highest_rsi = base_15['rsi'].max()
 
-    cond_price_15 = (
-        prev_candle['high']
-        > highest_high_15 * (1 + price_diff_pct)
-    )
+    range_high = base_16['close'].max()
+    range_low = base_16['close'].min()
+    range_volatility = (range_high - range_low) / range_high
 
-    cond_rsi_15 = (
-        prev_candle['rsi']
-        <= highest_rsi_15 * (1 - rsi_drop_pct)
-    )
+    cond_price_15 = prev_candle['high'] > highest_close * (1 + price_diff_pct)
+    cond_rsi_15 = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
+    cond_volatility_15 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
 
-    cond_volatility_15 = (
-        abs(prev_candle['close'] - prev_candle['open'])
-        / prev_candle['open']
-        >= min_volatility
-    )
+    signal_15 = cond_price_15 and cond_rsi_15 and cond_volatility_15 and cond_bullish_candle 
 
-    signal_15 = (
-        cond_price_15
-        and cond_rsi_15
-        and cond_volatility_15
-        and cond_bullish_candle
-    )
+    # -------------------------
+    # 30봉 조건
+    # -------------------------
+    # highest_close_30 = base_30['close'].max()
+    # highest_rsi_30 = base_30['rsi'].max()
 
-    # =================================================
-    # 15봉 기준 - close 가격 기준 추가 조건
-    # =================================================
-    highest_close_15_2 = base_15['close'].max()
+    # range_high_30 = base_31['close'].max()
+    # range_low_30 = base_31['close'].min()
+    # range_volatility_30 = (range_high_30 - range_low_30) / range_high_30
 
-    # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15봉 최고 종가보다 0.3% 이상 높아야 함
-    cond_price_15_2 = (
-        prev_candle['close']
-        > highest_close_15_2 * (1 + 0.003)
-    )
+    # cond_price_30 = prev_candle['close'] > highest_close_30 * (1 + price_diff_pct_30)
+    # cond_rsi_30 = prev_candle['rsi'] <= highest_rsi_30 * (1 - rsi_drop_pct_30)
+    # cond_volatility_30 = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility_30
 
-    # close 기준 변동성 조건:
-    # range_volatility가 0.3% 이상이어야 함
-    cond_range_volatility_15_2 = (
-        range_volatility_15 >= 0.003
-    )
+    # signal_30 = cond_price_30 and cond_rsi_30 and cond_volatility_30
 
-    signal_15_2 = (
-        cond_price_15_2
-        and cond_range_volatility_15_2
-        and cond_rsi_15
-        and cond_volatility_15
-        and cond_bullish_candle
-    )
-
-    # 15봉 high 기준 또는 15봉 close 기준
-    signal = signal_15 or signal_15_2
+    # 15봉 또는 30봉 중 하나라도 만족하면 진입 신호
+    signal = signal_15  # or signal_30
 
     return {
         "signal": signal,
         "side": "short",
 
-        # 15봉 high 기준 정보
-        "highest_high_15": float(highest_high_15),
-        "highest_rsi_15": float(highest_rsi_15),
+        # 15봉 기준 정보
+        "highest_close": float(highest_close),
+        "highest_rsi": float(highest_rsi),
         "price_condition_15": cond_price_15,
         "rsi_condition_15": cond_rsi_15,
         "volatility_condition_15": cond_volatility_15,
-        "range_volatility_15": float(range_volatility_15),
-        "signal_15": signal_15,
+        "range_volatility_15": float(range_volatility),
 
-        # 15봉 close 기준 추가 정보
-        "highest_close_15_2": float(highest_close_15_2),
-        "price_condition_15_2": cond_price_15_2,
-        "range_volatility_condition_15_2": cond_range_volatility_15_2,
-        "signal_15_2": signal_15_2,
+        # # 30봉 기준 정보
+        # "highest_close_30": float(highest_close_30),
+        # "highest_rsi_30": float(highest_rsi_30),
+        # "price_condition_30": cond_price_30,
+        # "rsi_condition_30": cond_rsi_30,
+        # "volatility_condition_30": cond_volatility_30,
+        # "range_volatility_30": float(range_volatility_30),
 
         # 공통 직전봉 정보
         "prev_open": float(prev_candle['open']),
