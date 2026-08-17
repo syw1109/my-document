@@ -398,7 +398,7 @@ def trade_once_sol():
     today_above_both        = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
 
     available_usdt = get_available_usdt()
-    margin_to_use  = available_usdt*0.5
+    margin_to_use  = available_usdt*0.35
     notional       = margin_to_use * LEVERAGE
     amount         = round(notional / current_price, 3)
 
@@ -409,8 +409,8 @@ def trade_once_sol():
     tp_price_long  = current_price * 1.015
     tp_price_short = current_price * 0.985
     
-    sl_price_long  = current_price * 0.93
-    sl_price_short = current_price * 1.07 # cme 전략이 너무 잦은 손절이 나가서 7%로 여유롭게 둠. 발산장 아니면 위기 피하지
+    sl_price_long  = current_price * 0.95
+    sl_price_short = current_price * 1.05 # cme 전략이 너무 잦은 손절이 나가서 5%로 여유롭게 둠. 발산장 아니면 위기 피하지
 
     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
@@ -2946,13 +2946,13 @@ while True:
                 min_volatility=0.0015
             )
 
-            # 50ma 단타왕 전략 SOL 
-            # 15m 50MA 전략
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m'
-            )
+            # # 50ma 단타왕 전략 SOL 
+            # # 15m 50MA 전략
+            # trade_50ma_close_strategy(
+            #     symbol=SOL_SYMBOL,
+            #     market_id=MARKET_ID_SOL,
+            #     timeframe='15m'
+            # )
 
             # # 5m 50MA 전략은 보류. 노이즈가 너무 많음
             # trade_50ma_close_strategy(
