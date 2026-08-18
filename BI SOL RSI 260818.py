@@ -1602,7 +1602,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
     #     prev = df.iloc[-1]
     #     prev2 = df.iloc[-2]
-    #     low_50 = df.iloc[-51:-1]['low'].min() # 직전 50 봉 low 값 보기
+    #     low_50 = df.iloc[-51:-1]['low'].min() # 직전 50봉 low값 보기
 
     #     ma50 = float(prev['ma50'])
     #     ma50_2 = float(prev2['ma50'])        
@@ -1675,28 +1675,29 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
         case1_signal = case1_stack and cond_prev1 and cond_prev2 and cond_range_1 # case1 완전 정배열에서는 오차 1%이내까지 허용
         case2_signal = case2_stack and cond_prev1 and cond_prev2 and cond_range_2 #case2 불완전 정배열 일때는 0.8% 이내까지만 
-        # cond_ma200_gap 까지 포함해서 최종 signal
-        signal = (case1_signal or case2_signal) and cond_ma200_gap
+        # cond_ma200_gap까지 포함해서 최종 signal
+        signal = case1_signal or case2_signal and cond_ma200_gap
 
         if case1_signal:
-            tp_pct_base = 0.014
+            tp_pct = 0.014
             sl_pct = 0.02
             timeframe_case = "15m_case1"
         elif case2_signal:
-            tp_pct_base = 0.01
+            tp_pct = 0.01
             sl_pct = 0.02
             timeframe_case = "15m_case2"
         else:
-            tp_pct_base = None
+            tp_pct = None
             sl_pct = None
             timeframe_case = None
 
-        # TP/SL 은 진입가 (다음 봉 시가) 기준이므로, 여기서는 tp_pct_base 만 저장하고
-        # 실제 tp_price, sl_price 는 trade_50ma_close_strategy 에서 entry_price 기준으로 계산
-        tp_price = None  # 여기서는 계산 안 함
-        sl_price = None  # 여기서는 계산 안 함
+        tp_price = None
+        if tp_pct is not None:
+            tp_price_pct = prev_close1 * (1 + tp_pct)
+            tp_price_ma200 = ma200
+            tp_price = min(tp_price_ma200, tp_price_pct)
 
-        # 신호 발생 캔들 정보 추가
+
         return {
             "signal": signal,
             "side": "long",
@@ -1718,14 +1719,10 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
             "range_condition_case2": cond_range_2,
             "case1_signal": case1_signal,
             "case2_signal": case2_signal,
-            "tp_pct_base": tp_pct_base,  # 기존 tp_pct → tp_pct_base 로 변경
+            "tp_pct": tp_pct,
             "sl_pct": sl_pct,
-            "tp_price": tp_price,  # None
-            "sl_price": sl_price,  # None
-            # 추가: 신호 발생 캔들 정보
-            "signal_candle_index": len(df) - 1,
-            "signal_candle_close": prev_close1,
-            "signal_candle_low": float(prev['low']),
+            "tp_price": tp_price,
+            "sl_price": None if sl_pct is None else prev_close1 * (1 - sl_pct)
         }
 
     # === 1h 봉 기준 20/25MA 전략 추가 ===
@@ -1736,7 +1733,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         prev = df.iloc[-1]          # 직전봉 (1h)
         prev2 = df.iloc[-2]
 
-        # 1h 기준 변수들 (ma20, ma25 는 df 에 미리 계산되어 있다고 가정)
+        # 1h 기준 변수들 (ma20, ma25는 df 에 미리 계산되어 있다고 가정)
         ma20 = float(prev['ma20'])
         ma25 = float(prev['ma25'])
         ma50 = float(prev['ma50'])
@@ -1767,7 +1764,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         # 조건 8: 직전봉 close * 1.003 < ma200
         cond_ma200_gap = prev_close * 1.003 < ma200
 
-        #조건 9: prev2 종가는 ma20, ma25 중 하나보다는 아래
+        #조건9: prev2 종가는 ma20, ma25 중 하나보다는 아래
         cond_prev2_below_one_of_20_25 = (prev2_close < ma20_prev2) or (prev2_close < ma25_prev2)
 
         # 최종 시그널
@@ -1784,17 +1781,17 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         tp_price_pct = prev_close * (1 + tp_pct)
         tp_price_ma200 = ma200
 
-        # ma200 이 직전봉 종가 대비 0.4% 미만 위치에 있으면
+        # ma200이 직전봉 종가 대비 0.4% 미만 위치에 있으면
         # ma200 대신 2% 목표가 사용
         if ma200 < prev_close * 1.004:
             tp_price = tp_price_pct
         else:
-            # ma200 과 2% 목표가 중 작은 값 선택
+            # ma200과 2% 목표가 중 작은 값 선택
             tp_price = min(tp_price_ma200, tp_price_pct)
 
 
-        # SL: 0.8%
-        sl_pct = 0.008
+        # SL: 0.7%
+        sl_pct = 0.02
         sl_price = prev_close * (1 - sl_pct)
 
         return {
@@ -1818,11 +1815,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
             "tp_pct": tp_pct,
             "sl_pct": sl_pct,
             "tp_price": tp_price,
-            "sl_price": sl_price,
-            # 추가: 신호 발생 캔들 정보 (1h 도 1% 하락 로직 쓸 경우 대비)
-            "signal_candle_index": len(df) - 1,
-            "signal_candle_close": prev_close,
-            "signal_candle_low": float(prev['low']),
+            "sl_price": sl_price
         }
 
     return None
@@ -2710,29 +2703,27 @@ def trade_rsi_close_strategy_eth_long_new(
 # 단타왕 ㄴ자 50ma 매매법
 def trade_50ma_close_strategy(symbol, market_id, timeframe):
     global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m, last_50ma_close_1h
-    global pending_50ma_close_signal
 
     now = time.time()
-    key = (symbol, timeframe)
 
-    # 공통 60 초 쿨다운
+    # 공통 60초 쿨다운
     if now - last_50ma_close_trade_time < 60:
         print(f"[{symbol} 50MA_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_50ma_close_trade_time:.1f}초 경과)")
         return
 
-    # 5m 전용 쿨다운 (예: 10 분)
+    # 5m 전용 쿨다운 (예: 10분)
     if timeframe == '5m' and now - last_50ma_close_5m < 600:
         minutes_ago = (now - last_50ma_close_5m) / 60
         print(f"[{symbol} 50MA_CLOSE 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (10 분 내 중복매수 금지)")
         return
 
-    # 15m 전용 쿨다운 (예: 30 분)
-    if timeframe == '15m' and now - last_50ma_close_15m < 2700:
+    # 15m 전용 쿨다운 (예: 30분)
+    if timeframe == '15m' and now - last_50ma_close_15m < 1800:
         minutes_ago = (now - last_50ma_close_15m) / 60
         print(f"[{symbol} 50MA_CLOSE 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (30 분 내 중복매수 금지)")
         return
 
-    # 1h 전용 쿨다운 (예: 180 분)
+    # 1h 전용 쿨다운 (예: 180분)
     if timeframe == '1h' and now - last_50ma_close_1h < 10800:
         minutes_ago = (now - last_50ma_close_1h) / 60
         print(f"[{symbol} 50MA_CLOSE 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
@@ -2761,122 +2752,27 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
     # 시그널 분석
     sig = analyze_50ma_close_strategy(symbol, timeframe, df)
-    # print(f"[{symbol} 50MA_CLOSE] SIGNAL={sig}")
+    print(f"[{symbol} 50MA_CLOSE] SIGNAL={sig}")
 
-    # 1) 진입 신호가 새로 발생했는지 확인
-    if sig and sig["signal"]:
-        # 기존에 대기 중인 신호가 없으면 새로 등록
-        if key not in pending_50ma_close_signal:
-            pending_50ma_close_signal[key] = {
-                "signal_info": sig,
-                "signal_time": now,
-                "signal_candle_index": sig["signal_candle_index"],
-                "signal_candle_close": sig["signal_candle_close"],
-                "signal_candle_low": sig["signal_candle_low"],
-            }
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 발생 → 1% 하락 캔들 대기 시작 (timeframe={timeframe})")
-        # 이미 대기 중이면 그대로 유지 (같은 신호에 대해 중복 등록 방지)
-        # 여기서 바로 매수하지 않고, 하락 캔들 확인 로직으로 넘어감
-    else:
-        # 진입 신호가 없으면, 기존 대기 중인 신호도 무효화
-        if key in pending_50ma_close_signal:
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 소멸 → 대기 상태 초기화 (timeframe={timeframe})")
-            del pending_50ma_close_signal[key]
-        # print(f"[{symbol} 50MA_CLOSE] 진입 조건 없음")
+    if not sig or not sig["signal"]:
+        print(f"[{symbol} 50MA_CLOSE] 진입 조건 없음")
         return
 
-    # 2) 대기 중인 신호가 있으면, 1% 이상 하락 캔들 확인
-    if key not in pending_50ma_close_signal:
-        return
-
-    pending = pending_50ma_close_signal[key]
-    sig_info = pending["signal_info"]
-    signal_candle_index = pending["signal_candle_index"]
-    signal_candle_close = pending["signal_candle_close"]
-
-    # “직전 20 봉 중에 있으면 유효” → 신호 발생 인덱스 기준, 현재 봉까지 20 봉 이내인지 확인
-    current_candle_index = len(df) - 1
-    if current_candle_index - signal_candle_index > 20:
-        # 20 봉을 벗어나면 신호 무효
-        print(f"[{symbol} 50MA_CLOSE] 신호 발생 후 20 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
-        del pending_50ma_close_signal[key]
-        return
-
-    # 3) 1% 이상 하락 캔들 확인
-    # 기준: signal_candle_close 대비 1% 이상 하락한 캔들 (close <= signal_candle_close * 0.99)
-    # 그리고 그 캔들이 “신호 발생 이후”여야 함 (인덱스 > signal_candle_index)
-    drop_threshold = signal_candle_close * 0.99
-
-    # 현재 봉은 아직 확정되지 않았을 수 있으므로, 확정된 봉만 확인 (iloc[-2] 이전까지)
-    # 여기서는 get_confirmed_candles_with_rsi_new 이 확정봉만 준다고 가정
-    # 신호 발생 이후 ~ 직전 봉까지 확인
-    start_idx = signal_candle_index + 1
-    end_idx = len(df) - 1  # 직전 봉 (확정)
-
-    drop_candle_index = None
-    for i in range(start_idx, end_idx + 1):
-        row = df.iloc[i]
-        close_i = float(row['close'])
-        if close_i <= drop_threshold:
-            drop_candle_index = i
-            break
-
-    if drop_candle_index is None:
-        # 아직 1% 하락 캔들이 나오지 않음 → 대기 계속
-        # print(f"[{symbol} 50MA_CLOSE] 1% 하락 캔들 아직 없음 (timeframe={timeframe})")
-        return
-
-    # 4) 하락 캔들이 확인되었으면, 그 다음 봉 시가에서 진입
-    # drop_candle_index 다음 봉 = drop_candle_index + 1
-    entry_candle_index = drop_candle_index + 1
-    if entry_candle_index >= len(df):
-        # 아직 진입할 다음 봉이 확정되지 않음 (실시간에서는 다음 봉 확정 대기)
-        # print(f"[{symbol} 50MA_CLOSE] 하락 캔들 확인됨 but 진입 봉 아직 미확정 (timeframe={timeframe})")
-        return
-
-    entry_candle = df.iloc[entry_candle_index]
-    entry_price = float(entry_candle['open'])  # 다음 봉 시가
-
-    # 5) 실제 매수 로직 (기존과 유사)
-    # 쿨다운 시간 갱신은 매수 성공 후
-    current_price = entry_price  # 시장가 대신 시가 기준 가격으로 사용
-    margin_ratio = 0.4 if timeframe == '15m' else 0.35 if timeframe == '1h' else 0.4  # 1h 도 40% 사용
+    # 주문 수량 계산 (타임프레임별 진입 비율)
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    margin_ratio = 0.25 if timeframe == '15m' else 0.3 if timeframe == '1h' else 0.4  # 1h도 40% 사용
     margin_to_use = current_balance * margin_ratio    
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
     if amount <= 0:
         print(f"[{symbol} 50MA_CLOSE] 주문 수량이 0 이라서 중단")
-        del pending_50ma_close_signal[key]
         return
 
-    # === 진입가 (entry_price) 기준 TP/SL 재계산 ===
-    tp_price = None
-    sl_price = None
+    tp_price = sig["tp_price"]
+    sl_price = sig["sl_price"]
 
-    if timeframe == '15m' and sig_info.get("tp_pct_base") is not None:
-        ma50 = float(sig_info["ma50"])
-        tp_pct_base = float(sig_info["tp_pct_base"])  # 0.014 or 0.01 (참고용, 실제 TP 는 1.2% 고정)
-        sl_pct = float(sig_info["sl_pct"])            # 0.02
-
-        # SL: 진입가 기준 -0.7% (진입가 * 0.993)
-        sl_price = entry_price * (1 - 0.007)
-
-        # TP: min(ma50, 진입가 * 1.012)
-        # ma50 > 진입가 * 1.005 보다 작으면 그냥 1.2% 채택
-        tp_price_pct = entry_price * 1.012
-        if ma50 < entry_price * 1.005:
-            tp_price = tp_price_pct
-        else:
-            tp_price = min(ma50, tp_price_pct)
-
-    else:
-        # 1h 등 다른 타임프레임은 기존 로직 유지 (필요하면 동일하게 수정 가능)
-        tp_price = sig_info.get("tp_price")
-        sl_price = sig_info.get("sl_price")
-
-    # 실제 매수 (시장가 대신, 다음 봉 시가에 가까운 가격으로 제한가 주문을 쓸 수도 있음)
-    # 여기서는 간단히 시장가로 가정
+    # 실제 매수
     try:
         order = exchange.create_market_buy_order(
             symbol=symbol,
@@ -2901,13 +2797,8 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
     place_sl_long('SOL/USDT', sl_price)
     print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
-    print(
-        f"[{symbol} 50MA_CLOSE] 롱 진입 | timeframe={timeframe} | "
-        f"amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}"
-    )
-
-    # 진입 완료 후 대기 상태 초기화
-    del pending_50ma_close_signal[key]
+    print(f"[{symbol} 50MA_CLOSE] 롱 진입 | timeframe={timeframe} | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
+    
     
 
     
@@ -2940,8 +2831,6 @@ last_50ma_close_trade_time = 0
 last_50ma_close_5m = 0
 last_50ma_close_15m = 0
 last_50ma_close_1h = 0
-# 50MA_CLOSE 전략: 진입 신호 후 1% 하락 캔들 대기 상태 관리
-pending_50ma_close_signal = {}  # key: (symbol, timeframe), value: {signal_info, signal_time, signal_candle_index, ...}
 
 while True:
     try:
