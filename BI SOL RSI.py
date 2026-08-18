@@ -1680,11 +1680,11 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
         if case1_signal:
             tp_pct = 0.014
-            sl_pct = 0.007
+            sl_pct = 0.02
             timeframe_case = "15m_case1"
         elif case2_signal:
             tp_pct = 0.01
-            sl_pct = 0.007
+            sl_pct = 0.02
             timeframe_case = "15m_case2"
         else:
             tp_pct = None
@@ -1791,7 +1791,7 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
 
 
         # SL: 0.7%
-        sl_pct = 0.007
+        sl_pct = 0.02
         sl_price = prev_close * (1 - sl_pct)
 
         return {
@@ -2760,7 +2760,7 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
     # 주문 수량 계산 (타임프레임별 진입 비율)
     current_price = float(exchange.fetch_ticker(symbol)['last'])
-    margin_ratio = 0.45 if timeframe == '15m' else 0.35 if timeframe == '5m' else 0.4  # 1h도 40% 사용
+    margin_ratio = 0.25 if timeframe == '15m' else 0.3 if timeframe == '1h' else 0.4  # 1h도 40% 사용
     margin_to_use = current_balance * margin_ratio    
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
@@ -2946,13 +2946,13 @@ while True:
                 min_volatility=0.0015
             )
 
-            # # 50ma 단타왕 전략 SOL 
-            # # 15m 50MA 전략
-            # trade_50ma_close_strategy(
-            #     symbol=SOL_SYMBOL,
-            #     market_id=MARKET_ID_SOL,
-            #     timeframe='15m'
-            # )
+            # 50ma 단타왕 전략 SOL 
+            # 15m 50MA 전략
+            trade_50ma_close_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m'
+            )
 
             # # 5m 50MA 전략은 보류. 노이즈가 너무 많음
             # trade_50ma_close_strategy(
@@ -3000,7 +3000,8 @@ while True:
                 price_diff_pct=0.0005,  # ← 추가
                 min_range_volatility=0.01   #15봉 변동성 1% 미만시 진입 금지             
             )
-            
+
+        time.sleep(2) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이            
         # XRP 보유 시 추매전략
         xrp_position = get_position_amount('XRP/USDT')
 
@@ -3097,7 +3098,7 @@ while True:
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
-        time.sleep(17)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
+        time.sleep(16)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
