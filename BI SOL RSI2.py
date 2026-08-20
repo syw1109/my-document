@@ -839,6 +839,7 @@ def analyze_bullish_divergence_close(symbol, timeframe, rsi_raise_pct=0.02, min_
     if len(df) < 17:
         return None
 
+
     prev_candle = df.iloc[-1]  # 직전봉 1
     base_15 = df.iloc[-16:-2]  # 3~16, 2 번 봉 제외
     base_16 = df.iloc[-17:-1]  # 2~17, 2 번+16번봉포함 시가 포함 목적 봉 포함
