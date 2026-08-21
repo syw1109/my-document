@@ -685,12 +685,12 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     # ──────────────────────────────────────────────────────────────
     # timeframe 별 쿨다운 체크 (1 시간봉=60 분, 15 분봉=15 분)
     # ──────────────────────────────────────────────────────────────
-    if timeframe == '1h' and time.time() - last_sol_buy_time_1h < 3600:
+    if timeframe == '1h' and time.time() - last_sol_buy_time_1h < 7200:
         minutes_ago = (time.time() - last_sol_buy_time_1h) / 60
         print(f"[{symbol} {timeframe} RSI] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
         return
     
-    if timeframe == '15m' and time.time() - last_sol_buy_time_15m < 900:
+    if timeframe == '15m' and time.time() - last_sol_buy_time_15m < 1800:
         minutes_ago = (time.time() - last_sol_buy_time_15m) / 60
         print(f"[{symbol} {timeframe} RSI] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
         return
