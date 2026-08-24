@@ -1569,195 +1569,84 @@ def get_confirmed_candles_with_rsi_new(symbol, timeframe, count=260, rsi_length=
 
 
 # eth 50, 100, 200 지지룰 
-def analyze_bullish_divergence_close_new(
-    symbol,
-    timeframe,
-    df_cache,
-    min_volatility=0.003
-):
+def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volatility=0.003):
     df = df_cache.copy()
 
     if len(df) < 21:
         return None
 
     prev = df.iloc[-1]
-    prev2 = df.iloc[-2]  # 2번째 이전 봉
-    prev3 = df.iloc[-3]  # 3번째 이전 봉
-
-    base_7 = df.iloc[-8:-2]  # 2번째봉 제외 이전 3번째 봉부터 7개 구간을 보는 형태
+    prev2 = df.iloc[-2] # 2번째 이전 봉
+    base_7 = df.iloc[-8:-2] # 2번째봉 제외  이전 3번째 봉부터 7개 구간을 보는 형태
     base_16 = df.iloc[-17:-1]  # 2~17, 2 번~16까지 최초봉 시가도 포함하기위한 목적 봉 포함
 
     lowest_rsi = base_7['rsi'].min()
     lowest_close = base_7['close'].min()
-
+    
     # 기준 구간의 최고/최저 종가로 변동성 계산
     range_high = base_16['close'].max()
-    range_low = base_16['close'].min()
+    range_low  = base_16['close'].min()
+    range_volatility = (range_high - range_low) / range_high  #이전 변동성%
 
-    if range_high == 0:
-        return None
-
-    range_volatility = (
-        (range_high - range_low) / range_high
-    )  # 이전 변동성%
 
     # 기존 상승 다이버전스 기본 조건
     # 직전봉 RSI가 기준 최저 RSI의 90%보다 큰지 확인
-    cond_div = (
-        prev['rsi'] > lowest_rsi * 0.9
-    )  # and (prev['close'] < lowest_close * 0.99)
+    cond_div = (prev['rsi'] > lowest_rsi * 0.9)  # and (prev['close'] < lowest_close * 0.99)
 
     # 직전봉 몸통 변동성이 최소 기준 이상인지 확인
-    cond_vol = (
-        abs(prev['close'] - prev['open'])
-        / prev['open']
-        >= min_volatility
-    )
+    cond_vol = abs(prev['close'] - prev['open']) / prev['open'] >= min_volatility
 
     # MA18 관련 외부 추세 확인
     trend = ma18_4day_change_trend()
     vol_trend = ma18_6day_volatility_trend()
-
-    # 3days up, 6day up 둘중 하나라도 있는지 판단 strong_ma18
+    # 3days up, 6day up 둘중 하나라도 있는지 판단 strong_ma18   
     if trend is None or vol_trend is None:
-        print(
-            f"[{symbol} {timeframe}] "
-            "MA18 추세 데이터를 가져오지 못해 중단"
-        )
+        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
         return None
-
-    strong_ma18 = (
-        trend["up_3days"]
-        or vol_trend["all_up_6days"]
-    )
+    strong_ma18 = trend["up_3days"] or vol_trend["all_up_6days"]
 
     last_11 = df.iloc[-11:]
-    last_21 = df.iloc[-16:]  # 직전 15개봉만 정배열 조건 만족하면 되게 하기위해 21 -> 16으로 수정
+    last_21 = df.iloc[-16:] # 직전 15개봉만 정배열 조건 만족하면 되게 하기위해 21 -> 16으로 수정
 
     # 정배열 조건 확인 함수
-    # ma50 > vwma100*0.9993 > ma200 이 모든 봉에서 유지되는지 검사
-    # 노이즈로 ma50 > vwma100*1.002 > ma200 수정 확실한 정배열
+    # ma50 > vwma100*0.9993 > ma200 이 모든 봉에서 유지되는지 검사 -> 노이즈로 ma50 > vwma100*1.002 > ma200 수정 확실한 정배열
     def is_bull_stack(subdf):
-        return (
-            (subdf['ma50'] > subdf['vwma100'] * 1.002).all()
-            and
-            (subdf['vwma100'] > subdf['ma200']).all()
-        )
+        return (subdf['ma50'] > subdf['vwma100']*1.002).all() and (subdf['vwma100'] > subdf['ma200']).all()
 
     # 상승장이면 last11 을 쓰고 아니면 21을 쓴다
-    cond_ma = (
-        is_bull_stack(last_11)
-        if strong_ma18
-        else is_bull_stack(last_21)
-    )
+    cond_ma = is_bull_stack(last_11) if strong_ma18 else is_bull_stack(last_21)
 
     # 직전봉 몸통의 아래 경계
-    # lower = min(prev['open'], prev['close'])
-    # 종가close 기준보다 low 터치하는 기준도 포함 목적 아래 코드로 변경
-    # 다시 몸통으로 수정 26/08/24
+    # lower = min(prev['open'], prev['close'])  종가close 기준보다 low 터치하는 기준도 포함 목적 아래 코드로 변경-> 다시 몸통으로 수정 26/08/24
     lower = prev['close']
-
-    # 직전봉 몸통의 위 경계
+    # 직전봉 몸통의 위 경계    
     upper = prev['open']
 
-    # DOGE 보유 수량을 가져옵니다.
-    # 세 번째 동적 매물대 계산용.
-    # DOGE 보유 수량이 있으면 수량 / 10 값을 레벨
+       
+    # DOGE 보유 수량을 가져옵니다. 세 번째 동적 매물대 계산용. DOGE 보유 수량이 있으면 수량 / 10 값을 레벨
     doge_position = get_position_amount('DOGE/USDT')
-    doge_level = (
-        abs(doge_position) / 10.0
-        if doge_position > 0
-        else None
-    )
-
-    # 직전봉 몸통 범위 안에 ma50 또는 vwma100 또는 ma200이 들어오는지 확인
-    cond_touch_ma50 = False
-    cond_touch_vwma100 = False
-    cond_touch_ma200 = False
-
+    doge_level = abs(doge_position) / 10.0 if doge_position > 0 else None
+     
+     
+    # 직전봉 몸통 범위 안에 ma50 또는 vwma100이 들어오는지 확인,   
+    cond_touch_ma = False
     if prev['close'] < prev['open']:  # 직전봉이 하락봉일때만 동작
-        cond_touch_ma50 = (
-            (lower <= prev['ma50'] <= upper)
-            or
-            (prev['close'] == prev['ma50'])
-        )
-
-        cond_touch_vwma100 = (
-            (lower <= prev['vwma100'] <= upper)
-            or
+        cond_touch_ma = (
+            (lower <= prev['ma50'] <= upper) or
+            (lower <= prev['vwma100'] <= upper) or
+            (prev['close'] == prev['ma50']) or
             (prev['close'] == prev['vwma100'])
         )
-
-        cond_touch_ma200 = (
-            (lower <= prev['ma200'] <= upper)
-            or
-            (prev['close'] == prev['ma200'])
-        )
-
-    # 이평선 중 하나라도 터치했는지 확인
-    cond_touch_ma = (
-        cond_touch_ma50
-        or cond_touch_vwma100
-        or cond_touch_ma200
-    )
-
+     
     # DOGE 레벨이 있을 때만 아래 조건
     cond_touch_doge = False
-
     if doge_level is not None:
         cond_touch_doge = (
-            (lower <= doge_level <= upper)
-            or
+            (lower <= doge_level <= upper) or
             (prev['close'] == doge_level)
         )
-
     # 이평선 터치 또는 DOGE 매물대 터치 중 하나라도 만족하면 통과
-    cond_touch = (
-        cond_touch_ma
-        or cond_touch_doge
-    )
-
-    # -------------------------------------------------
-    # 지지받은 이평선별 prev2, prev3 종가 조건
-    # -------------------------------------------------
-
-    # ma50 지지선에서 지지받은 경우:
-    # prev2, prev3의 종가가 ma50보다 모두 위에 있어야 함
-    cond_prev2_prev3_above_ma50 = (
-        prev2['close'] > prev2['ma50']
-        and
-        prev3['close'] > prev3['ma50']
-    )
-
-    # vwma100 지지선에서 지지받은 경우:
-    # prev2, prev3의 종가가 vwma100보다 모두 위에 있어야 함
-    cond_prev2_prev3_above_vwma100 = (
-        prev2['close'] > prev2['vwma100']
-        and
-        prev3['close'] > prev3['vwma100']
-    )
-
-    # ma200 지지선에서 지지받은 경우:
-    # prev2, prev3의 종가가 ma200보다 모두 위에 있어야 함
-    cond_prev2_prev3_above_ma200 = (
-        prev2['close'] > prev2['ma200']
-        and
-        prev3['close'] > prev3['ma200']
-    )
-
-    # 지지받은 이평선에 해당하는 조건만 적용
-    cond_prev_close_above_support = (
-        (cond_touch_ma50 and cond_prev2_prev3_above_ma50)
-        or
-        (cond_touch_vwma100 and cond_prev2_prev3_above_vwma100)
-        or
-        (cond_touch_ma200 and cond_prev2_prev3_above_ma200)
-    )
-
-    # DOGE 매물대만 터치한 경우에는
-    # 이평선 지지 조건을 별도로 적용하지 않음
-    if cond_touch_doge and not cond_touch_ma:
-        cond_prev_close_above_support = True
+    cond_touch = cond_touch_ma or cond_touch_doge
 
     # # 정배열중 RSI+ W 나오면 사는 전략 ->     #정배열 RSI+ 전략은 실효성이 없어서 폐쇄
     # # 직전봉은 상승봉, 2번째 이전 봉은 하락봉이어야 함
@@ -1777,69 +1666,35 @@ def analyze_bullish_divergence_close_new(
     
     # 기존 다이버전스 or 정배열 RSI+ 중 하나라도 맞으면 진입 후보
     # 단, 변동성/정배열/터치 조건도 모두 함께 확인
-
-    # 기존 다이버전스 or 정배열 RSI+ 중 하나라도 맞으면 진입 후보
-    # 단, 변동성/정배열/터치/지지선별 과거 종가 조건도 모두 함께 확인
-    signal = (
-        cond_div
-        and cond_vol
-        and cond_ma
-        and cond_touch
-        and cond_prev_close_above_support
-    )
+        
+    signal = cond_div and cond_vol and cond_ma and cond_touch
 
     # 결과 반환
     return {
         "signal": signal,
         "side": "long",
-
         "prev_open": float(prev['open']),
         "prev_close": float(prev['close']),
         "prev_rsi": float(prev['rsi']),
-
         "prev2_open": float(prev2['open']),
         "prev2_close": float(prev2['close']),
         "prev2_rsi": float(prev2['rsi']),
-
-        "prev3_open": float(prev3['open']),
-        "prev3_close": float(prev3['close']),
-        "prev3_rsi": float(prev3['rsi']),
-
         "lowest_rsi": float(lowest_rsi),
         "lowest_close": float(lowest_close),
-
         "ma50": float(prev['ma50']),
         "vwma100": float(prev['vwma100']),
         "ma200": float(prev['ma200']),
-
         "div_condition": cond_div,
+        # "rsi_plus_condition": cond_rsi_plus,
+        # "rsi_plus_1": cond_rsi_1,
+        # "rsi_plus_2": cond_rsi_2,
+        # "rsi_plus_3": cond_rsi_3,
         "vol_condition": cond_vol,
         "range_volatility": float(range_volatility),
         "ma_condition": cond_ma,
-
-        "ma50_touch": cond_touch_ma50,
-        "vwma100_touch": cond_touch_vwma100,
-        "ma200_touch": cond_touch_ma200,
-        "ma_touch_condition": cond_touch_ma,
-        "doge_touch_condition": cond_touch_doge,
         "touch_condition": cond_touch,
-
-        "prev2_prev3_above_ma50": cond_prev2_prev3_above_ma50,
-        "prev2_prev3_above_vwma100": cond_prev2_prev3_above_vwma100,
-        "prev2_prev3_above_ma200": cond_prev2_prev3_above_ma200,
-        "prev_close_above_support_condition": cond_prev_close_above_support,
-
-        "doge_level": (
-            float(doge_level)
-            if doge_level is not None
-            else None
-        ),
-
         "tp_price": float(prev['close'])
-    }
-
-        
-
+    }    
 ### 이평선 전략 추가
 
 ### 단타왕 ㄴ자 매매 카피전략
