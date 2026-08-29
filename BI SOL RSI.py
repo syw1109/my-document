@@ -1501,13 +1501,23 @@ def analyze_bearish_divergence_close(
         "tp_price": float(prev_candle['close'])
     }
 
-## 현재봉 전략 추가
-def get_confirmed_candles_with_rsi_current(symbol, timeframe, count=100, rsi_length=14):
+## 현재봉 전략 추가 # 5m봉 0.7%이상 급등 잡기위한 current 전략
+def get_confirmed_candles_with_rsi_current(
+    symbol,
+    timeframe,
+    count=100,
+    rsi_length=14
+):
     """
-    현재 진행 중인 봉까지 포함해 RSI를 계산하는 current용 함수.
-    - 기존 get_confirmed_candles_with_rsi와 달리 현재봉을 제거하지 않는다.
-    - df.iloc[-1] 이 현재 진행 중인 봉이 되며 rsi도 포함된다.
+    현재 진행 중인 봉을 포함하고
+    확정된 봉 기준 RSI 를 Wilder(RMA) 방식으로 계산해 반환.
+
+    count=100: RSI 수렴 정확도 확보 (과거 100 봉 전 영향 0.05% 이하)
+
+    반환 DataFrame 에는 기존 OHLCV + RSI 가 포함되며,
+    필요시 volume 기반 지표 확장을 위해 volume 컬럼도 유지됩니다.
     """
+
     tf_ms = {
         '1m':  60_000,
         '3m':  180_000,
@@ -1518,23 +1528,33 @@ def get_confirmed_candles_with_rsi_current(symbol, timeframe, count=100, rsi_len
         '4h':  14_400_000,
         '1d':  86_400_000,
     }
-    
+
     interval_ms = tf_ms.get(timeframe)
     if interval_ms is None:
-        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")    
+        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")
 
-    # count + 여유분 요청 (현재봉 포함)
-    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=count + 5)
+    # count + 여유분 요청
+    ohlcv = exchange.fetch_ohlcv(
+        symbol,
+        timeframe=timeframe,
+        limit=count + 5
+    )
+
     if ohlcv is None or len(ohlcv) < rsi_length + 16:
         raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
 
-    df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
+    df = pd.DataFrame(
+        ohlcv,
+        columns=['ts', 'open', 'high', 'low', 'close', 'volume']
+    )
 
-    # 현재봉을 제거하지 않고 바로 tail(count)
+    # 현재 진행 중인 봉은 제거하지 않고 그대로 사용
     df = df.tail(count).reset_index(drop=True)
 
     if len(df) < rsi_length + 16:
-        raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
+        raise ValueError(
+            f"{symbol} {timeframe} 확정봉 데이터가 부족합니다."
+        )
 
     # Wilder(RMA) 방식 RSI 계산
     delta = df['close'].diff()
@@ -1548,13 +1568,233 @@ def get_confirmed_candles_with_rsi_current(symbol, timeframe, count=100, rsi_len
     avg_loss.iloc[rsi_length] = loss.iloc[1:rsi_length + 1].mean()
 
     for i in range(rsi_length + 1, len(df)):
-        avg_gain.iloc[i] = (avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]) / rsi_length
-        avg_loss.iloc[i] = (avg_loss.iloc[i - 1] * (rsi_length - 1) + loss.iloc[i]) / rsi_length
+        avg_gain.iloc[i] = (
+            avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]
+        ) / rsi_length
+        avg_loss.iloc[i] = (
+            avg_loss.iloc[i - 1] * (rsi_length - 1) + loss.iloc[i]
+        ) / rsi_length
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
     df['rsi'] = 100 - (100 / (1 + rs))
 
+    # 필요시 volume 기반 지표 추가를 위해 volume 컬럼 유지
+    # (예: volume rolling average, OBV 등 확장 가능)
+
     return df.dropna(subset=['rsi']).reset_index(drop=True)
+# 5m봉 0.7%이상 급등 잡기위한 current 전략
+
+def analyze_ada_volume_spike(
+    symbol,
+    timeframe,
+    side,  # 'long' or 'short'
+    df=None
+):
+    """
+    ADA 보유 시 SOL 실시간 진입용 거래량/변동성 조건
+
+    - 현재 진행 중인 봉 (current candle) 을 포함
+    - 변동성: 시가 대비 ±0.7% 이상
+    - 거래량: 직전 3봉 평균의 2배 이상
+
+    side='long': 롱 진입 (양봉)
+    side='short': 숏 진입 (음봉)
+    """
+
+    if df is None:
+        df = get_confirmed_candles_with_rsi_current(symbol, timeframe)
+
+    if df is None or len(df) < 8:
+        return None
+
+    # 현재 진행 중인 봉
+    current = df.iloc[-1]
+
+    # 직전 3봉 (현재봉 제외)
+    last_3 = df.iloc[-4:-1]
+
+    # -------------------------------------------------
+    # 1) 변동성 조건: 시가 대비 ±0.7% 이상
+    # -------------------------------------------------
+    volatility = abs(current['close'] - current['open']) / current['open']
+
+    cond_volatility = volatility >= 0.007
+
+    if not cond_volatility:
+        return {
+            "signal": False,
+            "side": side,
+            "reason": "변동성 부족",
+            "volatility": float(volatility),
+        }
+
+    # -------------------------------------------------
+    # 2) 거래량 조건: 직전 3봉 평균의 2배 이상
+    # -------------------------------------------------
+    avg_vol_3 = last_3['volume'].mean()
+
+    if avg_vol_3 == 0:
+        return None
+
+    vol_ratio = current['volume'] / avg_vol_3
+
+    cond_volume = vol_ratio >= 2.0
+
+    # -------------------------------------------------
+    # 3) 캔들 방향 조건
+    # -------------------------------------------------
+    if side == 'long':
+        # 롱: 음봉 (close < open, 0.7% 급락)
+        cond_direction = current['close'] < current['open']
+    else:
+        # 숏: 양봉 (close > open, 0.7% 급등)
+        cond_direction = current['close'] > current['open']
+
+    # 최종 시그널
+    signal = cond_volatility and cond_volume and cond_direction
+
+    return {
+        "signal": signal,
+        "side": side,
+
+        "volatility": float(volatility),
+        "volatility_threshold": 0.007,
+
+        "avg_vol_3": float(avg_vol_3),
+        "current_volume": float(current['volume']),
+        "vol_ratio": float(vol_ratio),
+        "vol_mult_required": 2.0,
+
+        "cond_volatility": cond_volatility,
+        "cond_volume": cond_volume,
+        "cond_direction": cond_direction,
+
+        # 현재봉 정보
+        "current_open": float(current['open']),
+        "current_close": float(current['close']),
+        "current_low": float(current['low']),
+        "current_high": float(current['high']),
+        "current_volume": float(current['volume']),
+    }
+
+# 5m봉 0.7%이상 급등 잡기위한 current 전략
+def trade_ada_volume_spike_sol(
+    symbol,
+    market_id,
+    timeframe,
+    side
+):
+    """
+    ADA 보유 시 SOL 실시간 진입 전략
+
+    - ADA 롱 보유: SOL 롱 진입
+    - ADA 숏 보유: SOL 숏 진입
+    - 포지션 제한: ADA 수량 * 6 개까지
+    - TP/SL 없음 (진입만)
+    """
+
+    global last_ada_trade_time, last_ada_5m
+
+    now = time.time()
+
+    # 공통 60 초 쿨다운
+    if now - last_ada_trade_time < 60:
+        print(f"[{symbol} ADA] 60 초 쿨다운 중 진입 금지")
+        return
+
+    # 5m 전용 15 분 쿨다운
+    if timeframe == '5m' and now - last_ada_5m < 180:
+        minutes_ago = (now - last_ada_5m) / 60
+        print(f"[{symbol} ADA 5m] 최근 {minutes_ago:.1f}분 전에 진입함 (3 분 내 중복진입 금지)")
+        return
+
+    set_margin_and_leverage(symbol)
+    current_balance = get_available_usdt()
+
+    if current_balance < 2500 or current_balance > 12000:
+        print(f"[{symbol} ADA] 계좌 잔고 {current_balance:.2f} USD 범위 밖이므로 진입 금지")
+        return
+
+    # ADA 포지션 확인
+    ada_position = get_position_amount('ADA/USDT')
+    sol_position = get_position_amount('SOL/USDT')
+
+    if side == 'long':
+        if ada_position <= 0:
+            print(f"[{symbol} ADA_LONG] ADA 롱 포지션 없음")
+            return
+
+        n_ada = abs(ada_position)
+        sol_threshold = 6 * n_ada
+        current_sol = sol_position if sol_position > 0 else 0
+
+        print(f"[{symbol} ADA_LONG] ADA={n_ada}, SOL롱={current_sol}, 기준={sol_threshold}")
+
+        if current_sol > sol_threshold:
+            print(f"[{symbol} ADA_LONG] SOL 롱 보유량이 기준 초과")
+            return
+
+    else:
+        if ada_position >= 0:
+            print(f"[{symbol} ADA_SHORT] ADA 숏 포지션 없음")
+            return
+
+        n_ada = abs(ada_position)
+        sol_threshold = 6 * n_ada
+        current_sol = -sol_position if sol_position < 0 else 0
+
+        print(f"[{symbol} ADA_SHORT] ADA={n_ada}, SOL숏={current_sol}, 기준={sol_threshold}")
+
+        if current_sol > sol_threshold:
+            print(f"[{symbol} ADA_SHORT] SOL 숏 보유량이 기준 초과")
+            return
+
+    # 주문 수량 계산
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    available_usdt = get_available_usdt()
+    margin_to_use = available_usdt * 0.5
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    if amount <= 0:
+        print(f"[{symbol} ADA] 주문 수량이 0 이라서 중단")
+        return
+
+    # -------------------------------------------------
+    # 거래량/변동성 신호 확인
+    # -------------------------------------------------
+    vol_signal = analyze_ada_volume_spike(
+        symbol=symbol,
+        timeframe=timeframe,
+        side=side
+    )
+
+    print(f"[{symbol} ADA] VOLUME_SPIKE={vol_signal}")
+
+    if not vol_signal or not vol_signal["signal"]:
+        print(f"[{symbol} ADA] 진입 조건 불만족")
+        return
+
+    # -------------------------------------------------
+    # 진입 실행
+    # -------------------------------------------------
+    if side == 'long':
+        exchange.create_market_buy_order(symbol, amount)
+        print(f"[{symbol} ADA_LONG] 롱 진입 | amount={amount} | price={current_price}")
+
+        last_ada_trade_time = time.time()
+        if timeframe == '5m':
+            last_ada_5m = time.time()
+
+    else:
+        exchange.create_market_sell_order(symbol, amount)
+        print(f"[{symbol} ADA_SHORT] 숏 진입 | amount={amount} | price={current_price}")
+
+        last_ada_trade_time = time.time()
+        if timeframe == '5m':
+            last_ada_5m = time.time()
+            
+# 5m봉 0.7%이상 급등 잡기위한 current 전략
 
 def analyze_bullish_divergence_close_current(
     symbol,
@@ -3329,10 +3569,15 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
 
+# 전역 변수 추가
+last_ada_trade_time = 0
+last_ada_5m = 0
+
+# 기존 변수들
 last_run_date = None
-last_sol_trade_time = 0  # 마지막 SOL 체결 시간 (60 초 쿨다운용)
-last_sol_buy_time_1h = 0  # 마지막 SOL 1 시간봉 매수 시간 (60 분 쿨다운용)
-last_sol_buy_time_15m = 0  # 마지막 SOL 15 분봉 매수 시간 (15 분 쿨다운용)
+last_sol_trade_time = 0
+last_sol_buy_time_1h = 0
+last_sol_buy_time_15m = 0
 
 last_xrp_long_trade_time = 0
 last_xrp_long_1h = 0
@@ -3347,7 +3592,6 @@ last_link_short_trade_time = 0
 last_link_long_5m = 0
 last_link_short_5m = 0
 
-
 last_eth_long_trade_time = 0
 last_eth_long_1h = 0 
 last_eth_long_15m = 0
@@ -3356,14 +3600,44 @@ last_50ma_close_trade_time = 0
 last_50ma_close_5m = 0
 last_50ma_close_15m = 0
 last_50ma_close_1h = 0
-# 50MA_CLOSE 전략: 진입 신호 후 1% 하락 캔들 대기 상태 관리
-pending_50ma_close_signal = {}  # key: (symbol, timeframe), value: {signal_info, signal_time, signal_candle_index, ...}
+
+pending_50ma_close_signal = {}
 
 while True:
     try:
         now = now_kst()
 
+        # -------------------------------------------------
+        # ADA 보유 시 ADA 전략만 실행 (다른 전략 스킵)
+        # -------------------------------------------------
+        ada_position = get_position_amount('ADA/USDT')
 
+        if ada_position != 0:
+            # ADA 보유 중 → ADA 전략만 구동
+            if ada_position > 0:
+                # ADA 롱 → SOL 롱 진입
+                trade_ada_volume_spike_sol(
+                    symbol=SOL_SYMBOL,
+                    market_id=MARKET_ID_SOL,
+                    timeframe='5m',
+                    side='long'
+                )
+            else:
+                # ADA 숏 → SOL 숏 진입
+                trade_ada_volume_spike_sol(
+                    symbol=SOL_SYMBOL,
+                    market_id=MARKET_ID_SOL,
+                    timeframe='5m',
+                    side='short'
+                )
+
+            # ADA 보유 시 다른 전략은 실행하지 않음
+            time.sleep(3)
+            continue
+
+        # -------------------------------------------------
+        # ADA 미보유 시 기존 전략들 실행
+        # -------------------------------------------------
 
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
