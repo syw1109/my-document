@@ -461,24 +461,15 @@ def ma18_6day_volatility_trend():
 # ===================== 메인 루프 =====================
 
 
-# ===================== 확정봉 + RSI 계산 +거래량 추가 =====================
+# ===================== 확정봉 + RSI 계산 =====================
 
-def get_confirmed_candles_with_rsi(
-    symbol,
-    timeframe,
-    count=100,
-    rsi_length=14
-):
+def get_confirmed_candles_with_rsi(symbol, timeframe, count=100, rsi_length=14):
     """
     현재 진행 중인 봉을 타임스탬프로 명시적으로 제거하고
-    확정된 봉 기준 RSI 를 Wilder(RMA) 방식으로 계산해 반환.
+    확정된 봉 기준 RSI를 Wilder(RMA) 방식으로 계산해 반환.
 
-    count=100: RSI 수렴 정확도 확보 (과거 100 봉 전 영향 0.05% 이하)
-
-    반환 DataFrame 에는 기존 OHLCV + RSI 가 포함되며,
-    필요시 volume 기반 지표 확장을 위해 volume 컬럼도 유지됩니다.
+    count=100: RSI 수렴 정확도 확보 (과거 100봉 전 영향 0.05% 이하)
     """
-
     tf_ms = {
         '1m':  60_000,
         '3m':  180_000,
@@ -489,38 +480,29 @@ def get_confirmed_candles_with_rsi(
         '4h':  14_400_000,
         '1d':  86_400_000,
     }
-
+    
     interval_ms = tf_ms.get(timeframe)
     if interval_ms is None:
-        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")
+        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")    
 
     # count + 여유분 요청
-    ohlcv = exchange.fetch_ohlcv(
-        symbol,
-        timeframe=timeframe,
-        limit=count + 5
-    )
-
+    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=count + 5)
     if ohlcv is None or len(ohlcv) < rsi_length + 16:
         raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
 
-    df = pd.DataFrame(
-        ohlcv,
-        columns=['ts', 'open', 'high', 'low', 'close', 'volume']
-    )
+    df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
 
     # 현재 진행 중인 봉 타임스탬프 계산 후 제거
-    now_ms = int(
-        datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000
-    )
+    now_ms = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
     current_candle_start = (now_ms // interval_ms) * interval_ms
     df = df[df['ts'] < current_candle_start].copy()
     df = df.tail(count).reset_index(drop=True)
 
     if len(df) < rsi_length + 16:
-        raise ValueError(
-            f"{symbol} {timeframe} 확정봉 데이터가 부족합니다."
-        )
+        raise ValueError(f"{symbol} {timeframe} 확정봉 데이터가 부족합니다.")
+
+
+
 
     # Wilder(RMA) 방식 RSI 계산
     delta = df['close'].diff()
@@ -534,254 +516,15 @@ def get_confirmed_candles_with_rsi(
     avg_loss.iloc[rsi_length] = loss.iloc[1:rsi_length + 1].mean()
 
     for i in range(rsi_length + 1, len(df)):
-        avg_gain.iloc[i] = (
-            avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]
-        ) / rsi_length
-        avg_loss.iloc[i] = (
-            avg_loss.iloc[i - 1] * (rsi_length - 1) + loss.iloc[i]
-        ) / rsi_length
+        avg_gain.iloc[i] = (avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]) / rsi_length
+        avg_loss.iloc[i] = (avg_loss.iloc[i - 1] * (rsi_length - 1) + loss.iloc[i]) / rsi_length
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
     df['rsi'] = 100 - (100 / (1 + rs))
 
-    # 필요시 volume 기반 지표 추가를 위해 volume 컬럼 유지
-    # (예: volume rolling average, OBV 등 확장 가능)
-
     return df.dropna(subset=['rsi']).reset_index(drop=True)
+
 # ===================== RSI 다이버전스 판단 =====================
-
-#==========5m봉 급락시 진입 전략========
-def analyze_volume_spike_drop(
-    symbol,
-    timeframe,
-    side,  # 'long' or 'short'
-    df=None
-):
-    """
-    거래량 폭발 급락/급등 룰
-
-    - side='long': 급락 후 반등 (롱)
-    - side='short': 급등 후 하락 (숏)
-
-    기본 조건:
-    1) 직전봉의 직전 8 개봉 [-9:-1] 중 range_volatility > 1% (롱) / 1.5% (숏)
-    2) 직전봉의 직전 4 개봉 [-5:-1] 거래량 평균보다
-       직전봉 거래량이 3 배 (롱) / 4 배 (숏) 이상
-
-    예외 조건 (롱 전용):
-    - range_volatility 는 만족하지만 거래량 조건 불만족일 때
-      아래 두 가지 중 하나를 만족하면 2 배 또는 1.5 배만 요구
-
-    예외 1:
-    - [-9:-1] 구간에서
-      * 음봉 개수 >= 6
-      * 음봉 중 꼬리가 몸통의 1/3 이상인 캔들 >= 3
-    → 직전 3 개봉 [-4:-1] 거래량 평균의 2 배 이상이면 OK
-
-    예외 2:
-    - [-9:] 구간 (직전봉 포함 9 개봉) 에서
-      * 변동성 >= 0.5% 인 음봉 >= 2
-      * 변동성 >= 0.35% 인 음봉 >= 3
-      * 그중 꼬리가 몸통의 1/3 이상인 캔들 >= 2
-    → 직전 3 개봉 [-4:-1] 거래량 평균의 1.5 배 이상이면 OK
-    """
-
-    if df is None:
-        df = get_confirmed_candles_with_rsi(symbol, timeframe)
-
-    if df is None or len(df) < 12:
-        return None
-
-    prev = df.iloc[-1]  # 직전봉
-
-    # 구간 정의
-    last_8_ex_prev = df.iloc[-9:-1]  # 직전봉의 직전 8 개봉
-    last_4_ex_prev = df.iloc[-5:-1]  # 직전봉의 직전 4 개봉
-    last_3_ex_prev = df.iloc[-4:-1]  # 직전봉의 직전 3 개봉
-    last_9_incl_prev = df.iloc[-9:]  # 직전봉 포함 9 개봉
-
-    # -------------------------------------------------
-    # 1) range_volatility 계산 (직전봉의 직전 8 개봉)
-    # -------------------------------------------------
-    range_high = last_8_ex_prev['close'].max()
-    range_low = last_8_ex_prev['close'].min()
-
-    if range_high == 0:
-        return None
-
-    range_volatility = (range_high - range_low) / range_high
-
-    # 사이드별 임계치
-    if side == 'long':
-        range_vol_threshold = 0.01
-        vol_mult_base = 3.0
-        vol_mult_exc1 = 2.0
-        vol_mult_exc2 = 1.5
-    else:  # short
-        range_vol_threshold = 0.015
-        vol_mult_base = 4.0
-        vol_mult_exc1 = None  # 숏은 예외 조건 없음
-        vol_mult_exc2 = None
-
-    # range_volatility 조건
-    cond_range_vol = range_volatility >= range_vol_threshold
-
-    if not cond_range_vol:
-        return {
-            "signal": False,
-            "side": side,
-            "reason": "range_volatility 부족",
-            "range_volatility": float(range_volatility),
-        }
-
-    # -------------------------------------------------
-    # 2) 거래량 조건 (기본 룰)
-    # -------------------------------------------------
-    avg_vol_4 = last_4_ex_prev['volume'].mean()
-
-    if avg_vol_4 == 0:
-        return None
-
-    vol_ratio = prev['volume'] / avg_vol_4
-
-    cond_vol_base = vol_ratio >= vol_mult_base
-
-    # -------------------------------------------------
-    # 롱일 때만 예외 조건 처리
-    # -------------------------------------------------
-    cond_exc1 = False
-    cond_exc2 = False
-
-    if side == 'long' and not cond_vol_base:
-        # -------------------------
-        # 예외 조건 1
-        # -------------------------
-        # [-9:-1] 구간에서 음봉 개수 >= 7
-        # 음봉 중 꼬리가 몸통의 1/3 이상인 캔들 >= 3
-
-        # 음봉: close < open
-        bearish_8 = last_8_ex_prev[
-            last_8_ex_prev['close'] < last_8_ex_prev['open']
-        ]
-
-        cond_exc1_bearish_count = len(bearish_8) >= 7
-
-        # 몸통 = open - close
-        # 꼬리 = close - low
-        # 꼬리 / 몸통 >= 1/3
-        if len(bearish_8) > 0:
-            body_8 = bearish_8['open'] - bearish_8['close']
-            tail_8 = bearish_8['close'] - bearish_8['low']
-
-            # body 가 0 이면 division by zero 방지
-            ratio_8 = tail_8 / body_8.replace(0, np.nan)
-            long_tail_8 = (ratio_8 >= 1.0 / 3.0).sum()
-        else:
-            long_tail_8 = 0
-
-        cond_exc1_long_tail = long_tail_8 >= 3
-
-        cond_exc1 = (
-            cond_exc1_bearish_count
-            and cond_exc1_long_tail
-        )
-
-        # 예외 1 이 만족되면 거래량 배수 2.0 으로 완화
-        if cond_exc1:
-            cond_vol_base = vol_ratio >= vol_mult_exc1
-
-        # -------------------------
-        # 예외 조건 2 (예외 1 이 만족 안 됐을 때만 체크)
-        # -------------------------
-        if not cond_exc1:
-            # [-9:] 구간 (직전봉 포함 9 개봉)
-            # 변동성 >= 0.5% 음봉 >= 2
-            # 변동성 >= 0.35% 음봉 >= 3
-            # 그중 꼬리가 몸통의 1/3 이상인 캔들 >= 2
-
-            # 변동성 = (open - close) / open
-            vola_9 = (
-                (last_9_incl_prev['open'] - last_9_incl_prev['close'])
-                / last_9_incl_prev['open']
-            )
-
-            bearish_9 = last_9_incl_prev[
-                last_9_incl_prev['close'] < last_9_incl_prev['open']
-            ]
-
-            if len(bearish_9) > 0:
-                vola_bearish_9 = (
-                    (bearish_9['open'] - bearish_9['close'])
-                    / bearish_9['open']
-                )
-
-                cond_vol_05 = (vola_bearish_9 >= 0.005).sum() >= 2
-                cond_vol_035 = (vola_bearish_9 >= 0.0035).sum() >= 3
-            else:
-                cond_vol_05 = False
-                cond_vol_035 = False
-
-            # 꼬리 / 몸통 >= 1/3 인 캔들 개수
-            if len(bearish_9) > 0:
-                body_9 = bearish_9['open'] - bearish_9['close']
-                tail_9 = bearish_9['close'] - bearish_9['low']
-
-                ratio_9 = tail_9 / body_9.replace(0, np.nan)
-                long_tail_9 = (ratio_9 >= 1.0 / 3.0).sum()
-            else:
-                long_tail_9 = 0
-
-            cond_exc2_long_tail = long_tail_9 >= 2
-
-            cond_exc2 = (
-                cond_vol_05
-                and cond_vol_035
-                and cond_exc2_long_tail
-            )
-
-            # 예외 2 가 만족되면 거래량 배수 1.5 로 완화
-            if cond_exc2:
-                cond_vol_base = vol_ratio >= vol_mult_exc2
-
-    # 최종 시그널
-    signal = cond_range_vol and cond_vol_base
-
-    return {
-        "signal": signal,
-        "side": side,
-
-        "range_volatility": float(range_volatility),
-        "range_vol_threshold": float(range_vol_threshold),
-
-        "avg_vol_4": float(avg_vol_4),
-        "prev_volume": float(prev['volume']),
-        "vol_ratio": float(vol_ratio),
-        "vol_mult_required": (
-            vol_mult_base
-            if cond_vol_base and (side == 'short' or (cond_exc1 is False and cond_exc2 is False))
-            else (
-                vol_mult_exc1 if cond_exc1 else vol_mult_exc2
-            )
-        ),
-
-        "cond_range_vol": cond_range_vol,
-        "cond_vol_base": cond_vol_base,
-
-        # 롱 전용 예외 조건 정보
-        "cond_exc1": cond_exc1 if side == 'long' else None,
-        "cond_exc2": cond_exc2 if side == 'long' else None,
-
-        # 직전봉 정보
-        "prev_open": float(prev['open']),
-        "prev_close": float(prev['close']),
-        "prev_low": float(prev['low']),
-        "prev_high": float(prev['high']),
-        "prev_volume": float(prev['volume']),
-
-        "tp_price": float(prev['close']) * (1 + (0.01 if side == 'long' else -0.01)),
-        "sl_price": float(prev['close']) * (1 - (0.007 if side == 'long' else -0.007))
-    }
-#==========5m봉 급락시 진입 전략========
 
 
 
@@ -2902,7 +2645,7 @@ def trade_rsi_close_strategy_link(
 
     current_price = float(exchange.fetch_ticker(symbol)['last'])
     available_usdt = get_available_usdt()
-    margin_to_use = available_usdt * 0.5
+    margin_to_use = available_usdt*0.5
     notional = margin_to_use * LEVERAGE
     amount = round(notional / current_price, 3)
 
@@ -2910,9 +2653,6 @@ def trade_rsi_close_strategy_link(
         print(f"[{symbol}] 주문 수량이 0 이라서 중단")
         return
 
-    # -------------------------------------------------
-    # RSI 다이버전스 신호
-    # -------------------------------------------------
     if side == 'long':
         bull = analyze_bullish_divergence_close(
             symbol=symbol,
@@ -2932,24 +2672,9 @@ def trade_rsi_close_strategy_link(
             print(f"[{symbol} LINK_LONG] range_volatility {bull['range_volatility']*100:.2f}% 미만으로 진입 금지")
             return
 
-        # -------------------------------------------------
-        # 거래량 폭발 신호 (롱)
-        # -------------------------------------------------
-        vol_signal = analyze_volume_spike_drop(
-            symbol=symbol,
-            timeframe=timeframe,
-            side='long'
-        )
-
-        print(f"[{symbol} LINK_LONG] VOLUME_SPIKE={vol_signal}")
-
-        if not vol_signal or not vol_signal["signal"]:
-            print(f"[{symbol} LINK_LONG] 거래량 폭발 조건 불만족으로 진입 금지")
-            return
-
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bull["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bull["prev_close"] * (1 + tp_pct)
-        sl_price = bull["prev_close"] * (1 - 0.065)
+        sl_price = bull["prev_close"] * (1 - 0.006)
 
         exchange.create_market_buy_order(symbol, amount)
 
@@ -2983,21 +2708,6 @@ def trade_rsi_close_strategy_link(
             print(f"[{symbol} LINK_SHORT] range_volatility {bear['range_volatility']*100:.2f}% 미만으로 진입 금지")
             return
 
-        # -------------------------------------------------
-        # 거래량 폭발 신호 (숏)
-        # -------------------------------------------------
-        vol_signal = analyze_volume_spike_drop(
-            symbol=symbol,
-            timeframe=timeframe,
-            side='short'
-        )
-
-        print(f"[{symbol} LINK_SHORT] VOLUME_SPIKE={vol_signal}")
-
-        if not vol_signal or not vol_signal["signal"]:
-            print(f"[{symbol} LINK_SHORT] 거래량 폭발 조건 불만족으로 진입 금지")
-            return
-
         tp_pct = tp_pct_2 if (tp_pct_2 is not None and bear["range_volatility"] > 0.018) else tp_pct_1
         tp_price = bear["prev_close"] * (1 - tp_pct)
         sl_price = bear["prev_close"] * (1 + 0.0065)
@@ -3008,9 +2718,9 @@ def trade_rsi_close_strategy_link(
         if timeframe == '5m':
             last_link_short_5m = time.time()
 
-        place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} LINK_SHORT] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        place_tp_long('SOL/USDT', amount, tp_price)
+        place_sl_long('SOL/USDT', sl_price)
+        print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
 # eth 전략 ### 이평선 전략 추가 기준 전용 - eth 추매 조건은 삭제. 함수 이름 변경 필요
 def trade_rsi_close_strategy_eth_long_new(
@@ -3409,46 +3119,46 @@ while True:
                 rsi_drop_pct_30=0.001
             )
 
-        #   # 현재봉 기준 매매룰 추가  - 데이터만 잡아먹고 별로 실용성이 없어보임
-        # if not has_position(MARKET_ID_SOL):
-        #     trade_rsi_close_strategy_current(
-        #         symbol=SOL_SYMBOL,
-        #         market_id=MARKET_ID_SOL,
-        #         timeframe='1h',
-        #         tp_long_pct=0.01,
-        #         tp_long_pct_1=0.014,
-        #         tp_long_pct_2=0.02,
-        #         tp_short_pct=0.01,
-        #         tp_short_pct_2=0.015,
-        #         min_volatility=0.007,
-        #         price_diff_pct=0.004,
-        #         rsi_raise_pct=0.001,
-        #         rsi_drop_pct=0.001,
-        #         min_volatility_30=0.001,
-        #         price_diff_pct_30=0.005,
-        #         rsi_raise_pct_30=0.001,
-        #         rsi_drop_pct_30=0.001
-        #     )
+          # 현재봉 기준 매매룰 추가  
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_close_strategy_current(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='1h',
+                tp_long_pct=0.01,
+                tp_long_pct_1=0.014,
+                tp_long_pct_2=0.02,
+                tp_short_pct=0.01,
+                tp_short_pct_2=0.015,
+                min_volatility=0.007,
+                price_diff_pct=0.004,
+                rsi_raise_pct=0.001,
+                rsi_drop_pct=0.001,
+                min_volatility_30=0.001,
+                price_diff_pct_30=0.005,
+                rsi_raise_pct_30=0.001,
+                rsi_drop_pct_30=0.001
+            )
 
-        # if not has_position(MARKET_ID_SOL):
-        #     trade_rsi_close_strategy_current(
-        #         symbol=SOL_SYMBOL,
-        #         market_id=MARKET_ID_SOL,
-        #         timeframe='15m',
-        #         tp_long_pct=0.01,
-        #         tp_long_pct_1=0.014,
-        #         tp_long_pct_2=0.02,
-        #         tp_short_pct=0.01,
-        #         tp_short_pct_2=0.015,
-        #         min_volatility=0.007,
-        #         price_diff_pct=0.004,
-        #         rsi_raise_pct=0.001,
-        #         rsi_drop_pct=0.001,
-        #         min_volatility_30=0.0004,
-        #         price_diff_pct_30=0.005,
-        #         rsi_raise_pct_30=0.001,
-        #         rsi_drop_pct_30=0.001
-        #     )
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_close_strategy_current(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m',
+                tp_long_pct=0.01,
+                tp_long_pct_1=0.014,
+                tp_long_pct_2=0.02,
+                tp_short_pct=0.01,
+                tp_short_pct_2=0.015,
+                min_volatility=0.007,
+                price_diff_pct=0.004,
+                rsi_raise_pct=0.001,
+                rsi_drop_pct=0.001,
+                min_volatility_30=0.0004,
+                price_diff_pct_30=0.005,
+                rsi_raise_pct_30=0.001,
+                rsi_drop_pct_30=0.001
+            )
 
 
 # 이평선 매물대 전략, eth는 추가매수용 없어도 매수는 됨
@@ -3595,10 +3305,10 @@ while True:
                 market_id=MARKET_ID_SOL,
                 timeframe='5m',
                 side='long',
-                tp_pct_1=0.012,
-                tp_pct_2=0.014,
+                tp_pct_1=0.01,
+                tp_pct_2=0.012,
                 min_volatility=0.0015,
-                price_diff_pct=0.003,
+                price_diff_pct=0.0015,
                 rsi_raise_pct=0.01,
                 min_range_volatility=0.015
             )
@@ -3612,7 +3322,7 @@ while True:
                 tp_pct_1=0.01,
                 tp_pct_2=0.012,
                 min_volatility=0.0015,
-                price_diff_pct=0.003,
+                price_diff_pct=0.0015,
                 rsi_drop_pct=0.01,
                 min_range_volatility=0.015
             )
