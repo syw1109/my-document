@@ -565,10 +565,12 @@ def analyze_volume_spike_drop(
 
     기본 조건:
     1) 직전봉의 직전 8 개봉 [-9:-1] 중 range_volatility > 1% (롱) / 1.5% (숏)
-    2) 직전봉의 직전 4 개봉 [-5:-1] 거래량 평균보다
+    2) 롱: 직전 8 개봉의 마지막 봉 종가가 range_high 보다 -1% 이상 낮음
+       숏: 직전 8 개봉의 마지막 봉 종가가 range_low 보다 +1.5% 이상 높음
+    3) 직전봉의 직전 4 개봉 [-5:-1] 거래량 평균보다
        직전봉 거래량이 3 배 (롱) / 4 배 (숏) 이상
-    3) 직전봉 거래량이 150k 이상 (절대적 기준)
-    4) 직전봉 거래량이 지난 4 개봉 평균의 10 배 미만 (과도한 거래량 필터)
+    4) 직전봉 거래량이 120k 이상 (절대적 기준)
+    5) 직전봉 거래량이 지난 4 개봉 평균의 10 배 미만 (과도한 거래량 필터)
 
     예외 조건 (롱 전용):
     - range_volatility 는 만족하지만 거래량 조건 불만족일 때
@@ -613,6 +615,19 @@ def analyze_volume_spike_drop(
 
     range_volatility = (range_high - range_low) / range_high
 
+    # -------------------------------------------------
+    # 2) 방향별 추가 조건 (롱: -1%, 숏: +1.5%)
+    # -------------------------------------------------
+    # 직전 8 개봉의 마지막 봉 (인덱스 -2)
+    last_of_8_close = last_8_ex_prev.iloc[-1]['close']
+
+    if side == 'long':
+        # 롱: 마지막 봉 종가가 range_high 보다 -1% 이상 낮음
+        cond_direction = last_of_8_close <= range_high * (1 - 0.01)
+    else:
+        # 숏: 마지막 봉 종가가 range_low 보다 +1.5% 이상 높음
+        cond_direction = last_of_8_close >= range_low * (1 + 0.015)
+
     # 사이드별 임계치
     if side == 'long':
         range_vol_threshold = 0.01
@@ -625,19 +640,25 @@ def analyze_volume_spike_drop(
         vol_mult_exc1 = None  # 숏은 예외 조건 없음
         vol_mult_exc2 = None
 
-    # range_volatility 조건
+    # range_volatility 조건 AND 방향 조건
     cond_range_vol = range_volatility >= range_vol_threshold
+    cond_range_and_direction = cond_range_vol and cond_direction
 
-    if not cond_range_vol:
+    if not cond_range_and_direction:
+        reason = "range_volatility 부족" if not cond_range_vol else "방향 조건 불만족"
         return {
             "signal": False,
             "side": side,
-            "reason": "range_volatility 부족",
+            "reason": reason,
             "range_volatility": float(range_volatility),
+            "last_of_8_close": float(last_of_8_close),
+            "range_high": float(range_high),
+            "range_low": float(range_low),
+            "cond_direction": cond_direction,
         }
 
     # -------------------------------------------------
-    # 2) 거래량 조건 (기본 룰)
+    # 3) 거래량 조건 (기본 룰)
     # -------------------------------------------------
     avg_vol_4 = last_4_ex_prev['volume'].mean()
 
@@ -660,7 +681,7 @@ def analyze_volume_spike_drop(
     cond_vol_base = cond_vol_base and cond_abs_vol and cond_max_vol
 
     # -------------------------------------------------
-    # 롱일 때만 예외 조건 처리
+    # 4) 롱일 때만 예외 조건 처리
     # -------------------------------------------------
     cond_exc1 = False
     cond_exc2 = False
@@ -757,7 +778,7 @@ def analyze_volume_spike_drop(
                 cond_vol_base = (vol_ratio >= vol_mult_exc2) and cond_abs_vol and cond_max_vol
 
     # 최종 시그널
-    signal = cond_range_vol and cond_vol_base
+    signal = cond_range_and_direction and cond_vol_base
 
     return {
         "signal": signal,
@@ -783,6 +804,7 @@ def analyze_volume_spike_drop(
         ),
 
         "cond_range_vol": cond_range_vol,
+        "cond_direction": cond_direction,
         "cond_vol_base": cond_vol_base,
 
         # 롱 전용 예외 조건 정보
@@ -799,6 +821,7 @@ def analyze_volume_spike_drop(
         "tp_price": float(prev['close']) * (1 + (0.01 if side == 'long' else -0.01)),
         "sl_price": float(prev['close']) * (1 - (0.007 if side == 'long' else -0.007))
     }
+    
 #==========5m봉 급락시 진입 전략========
 
 
@@ -1172,16 +1195,16 @@ def analyze_bullish_divergence_close(
     """
     상승 다이버전스 판단 함수.
 
-    - 기존 15봉 low 기준 조건
-    - 추가 15봉 close 기준 조건
-    - 기존 30봉 조건
-    - 15봉 low 기준, 15봉 close 기준, 30봉 중
+    - 기존 15 봉 low 기준 조건
+    - 추가 15 봉 close 기준 조건
+    - 기존 30 봉 조건
+    - 15 봉 low 기준, 15 봉 close 기준, 30 봉 중
       하나라도 충족하면 signal=True
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    # 30봉 기준까지 보려면 최소 35개 이상 필요
+    # 30 봉 기준까지 보려면 최소 35 개 이상 필요
     if df is None or len(df) < 35:
         return None
 
@@ -1197,7 +1220,7 @@ def analyze_bullish_divergence_close(
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
 
-    # 30봉 기준 구간
+    # 30 봉 기준 구간
     base_30 = df.iloc[-31:-16]
     base_31 = df.iloc[-32:-1]
 
@@ -1207,7 +1230,7 @@ def analyze_bullish_divergence_close(
     )
 
     # =================================================
-    # 15봉 기준 - low 가격 기준
+    # 15 봉 기준 - low 가격 기준
     # =================================================
     lowest_low_15 = base_15['low'].min()
     # lowest_rsi_15 = base_15['rsi'].min()
@@ -1225,7 +1248,7 @@ def analyze_bullish_divergence_close(
 
     # 음봉들 중 최저 RSI
     lowest_rsi_15 = bearish_candles_15['rsi'].min()
-    
+   
 
     range_high_15 = base_16['close'].max()
     range_low_15 = base_16['close'].min()
@@ -1257,19 +1280,19 @@ def analyze_bullish_divergence_close(
     )
 
     # =================================================
-    # 15봉 기준 - close 가격 기준 추가 조건
+    # 15 봉 기준 - close 가격 기준 추가 조건
     # =================================================
     lowest_close_15_2 = base_15['close'].min()
 
     # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15봉 최저 종가보다 0.3% 이상 낮아야 함
+    # 직전봉 종가가 과거 15 봉 최저 종가보다 0.3% 이상 낮아야 함
     cond_price_15_2 = (
         prev_candle['close']
         < lowest_close_15_2 * (1 - 0.003)
     )
 
     # close 기준 변동성 조건:
-    # range_volatility가 0.3% 이상이어야 함
+    # range_volatility 가 0.3% 이상이어야 함
     cond_range_volatility_15_2 = (
         range_volatility_15 >= 0.003
     )
@@ -1283,7 +1306,7 @@ def analyze_bullish_divergence_close(
     )
 
     # =================================================
-    # 30봉 기준
+    # 30 봉 기준
     # =================================================
     lowest_low_30 = base_30['low'].min()
     # lowest_rsi_30 = base_30['rsi'].min()
@@ -1301,7 +1324,7 @@ def analyze_bullish_divergence_close(
 
     # 음봉들 중 최저 RSI
     lowest_rsi_30 = bearish_candles_30['rsi'].min()
-    
+   
 
     range_high_30 = base_31['close'].max()
     range_low_30 = base_31['close'].min()
@@ -1310,7 +1333,7 @@ def analyze_bullish_divergence_close(
     )
 
     cond_price_30 = (
-        prev_candle['low']
+        prev_candle['close']  # 30 봉은 close 기준으로 갈게
         < lowest_low_30 * (1 - price_diff_pct_30)
     )
 
@@ -1332,14 +1355,30 @@ def analyze_bullish_divergence_close(
         and cond_bearish_candle
     )
 
-    # 15봉 low 기준 또는 15봉 close 기준 또는 30봉 기준
+    # 15 봉 low 기준 또는 15 봉 close 기준 또는 30 봉 기준
     signal = signal_15 or signal_15_2 or signal_30
+
+    # =================================================
+    # range_volatility 결정
+    # =================================================
+    # signal_15 또는 signal_15_2 가 True 면 range_volatility_15 사용
+    # signal_30 만 True 면 range_volatility_30 사용
+    # =================================================
+    if signal_15 or signal_15_2:
+        range_volatility = range_volatility_15
+    elif signal_30:
+        range_volatility = range_volatility_30
+    else:
+        range_volatility = None
 
     return {
         "signal": signal,
         "side": "long",
 
-        # 15봉 low 기준 정보
+        # range_volatility 추가 (전략 함수에서 직접 사용)
+        "range_volatility": float(range_volatility) if range_volatility is not None else None,
+
+        # 15 봉 low 기준 정보
         "lowest_low_15": float(lowest_low_15),
         "lowest_rsi_15": float(lowest_rsi_15),
         "price_condition_15": cond_price_15,
@@ -1348,13 +1387,13 @@ def analyze_bullish_divergence_close(
         "range_volatility_15": float(range_volatility_15),
         "signal_15": signal_15,
 
-        # 15봉 close 기준 추가 정보
+        # 15 봉 close 기준 추가 정보
         "lowest_close_15_2": float(lowest_close_15_2),
         "price_condition_15_2": cond_price_15_2,
         "range_volatility_condition_15_2": cond_range_volatility_15_2,
         "signal_15_2": signal_15_2,
 
-        # 30봉 기준 정보
+        # 30 봉 기준 정보
         "lowest_low_30": float(lowest_low_30),
         "lowest_rsi_30": float(lowest_rsi_30),
         "price_condition_30": cond_price_30,
@@ -1372,7 +1411,6 @@ def analyze_bullish_divergence_close(
         "tp_price": float(prev_candle['close'])
     }
 
-
 # ---------------- bearish divergence ----------------
 def analyze_bearish_divergence_close(
     symbol,
@@ -1387,9 +1425,9 @@ def analyze_bearish_divergence_close(
     """
     하락 다이버전스 판단 함수.
 
-    - 기존 15봉 high 기준 조건
-    - 추가 15봉 close 기준 조건
-    - 15봉 high 기준 또는 15봉 close 기준 중
+    - 기존 15 봉 high 기준 조건
+    - 추가 15 봉 close 기준 조건
+    - 15 봉 high 기준 또는 15 봉 close 기준 중
       하나라도 충족하면 signal=True
     """
 
@@ -1401,8 +1439,8 @@ def analyze_bearish_divergence_close(
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
-    # 숏은 10봉 기준
-    base_15 = df.iloc[-12:-2]
+    # 숏은 15 봉 기준
+    base_15 = df.iloc[-16:-2]
 
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
@@ -1413,7 +1451,7 @@ def analyze_bearish_divergence_close(
     )
 
     # =================================================
-    # 15봉 기준 - high 가격 기준
+    # 15 봉 기준 - high 가격 기준
     # =================================================
     highest_high_15 = base_15['high'].max()
     # highest_rsi_15 = base_15['rsi'].max()
@@ -1431,8 +1469,8 @@ def analyze_bearish_divergence_close(
 
     # 양봉들 중 가장 높은 RSI
     highest_rsi_15 = bullish_candles_15['rsi'].max() 
-    
-    
+   
+
     range_high_15 = base_16['close'].max()
     range_low_15 = base_16['close'].min()
     range_volatility_15 = (
@@ -1463,19 +1501,19 @@ def analyze_bearish_divergence_close(
     )
 
     # =================================================
-    # 15봉 기준 - close 가격 기준 추가 조건
+    # 15 봉 기준 - close 가격 기준 추가 조건
     # =================================================
     highest_close_15_2 = base_15['close'].max()
 
     # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15봉 최고 종가보다 0.3% 이상 높아야 함
+    # 직전봉 종가가 과거 15 봉 최고 종가보다 0.3% 이상 높아야 함
     cond_price_15_2 = (
         prev_candle['close']
         > highest_close_15_2 * (1 + 0.003)
     )
 
     # close 기준 변동성 조건:
-    # range_volatility가 0.3% 이상이어야 함
+    # range_volatility 가 0.3% 이상이어야 함
     cond_range_volatility_15_2 = (
         range_volatility_15 >= 0.003
     )
@@ -1488,14 +1526,27 @@ def analyze_bearish_divergence_close(
         and cond_bullish_candle
     )
 
-    # 15봉 high 기준 또는 15봉 close 기준
+    # 15 봉 high 기준 또는 15 봉 close 기준
     signal = signal_15 or signal_15_2
+
+    # =================================================
+    # range_volatility 결정
+    # =================================================
+    # signal_15 또는 signal_15_2 가 True 면 range_volatility_15 사용
+    # =================================================
+    if signal_15 or signal_15_2:
+        range_volatility = range_volatility_15
+    else:
+        range_volatility = None
 
     return {
         "signal": signal,
         "side": "short",
 
-        # 15봉 high 기준 정보
+        # range_volatility 추가 (전략 함수에서 직접 사용)
+        "range_volatility": float(range_volatility) if range_volatility is not None else None,
+
+        # 15 봉 high 기준 정보
         "highest_high_15": float(highest_high_15),
         "highest_rsi_15": float(highest_rsi_15),
         "price_condition_15": cond_price_15,
@@ -1504,7 +1555,7 @@ def analyze_bearish_divergence_close(
         "range_volatility_15": float(range_volatility_15),
         "signal_15": signal_15,
 
-        # 15봉 close 기준 추가 정보
+        # 15 봉 close 기준 추가 정보
         "highest_close_15_2": float(highest_close_15_2),
         "price_condition_15_2": cond_price_15_2,
         "range_volatility_condition_15_2": cond_range_volatility_15_2,
@@ -2558,8 +2609,10 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
     - 진입 조건: 
       1. 1h 봉 직전봉 [-1] 이 ma20, ma25 모두 돌파 (종가 기준)
       2. prev2 조건 제거 (항상 진입 가능)
+    
     - 청산 조건: 
-      20 캔들 이후, 직전봉이 ma20 또는 ma25 아래로 종가 마감
+      직전 10 개 캔들 [-10:-1] 의 각각 그때의 ma20 AND ma25 보다 위에 있으면
+      직전봉의 종가가 ma20 OR ma25 보다 작은 경우 SOL 물량 close
     """
     
     df = df_cache.copy()
@@ -2571,7 +2624,6 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
         return None
     
     prev = df.iloc[-1]          # 직전봉 (1h)
-    prev2 = df.iloc[-2]         # 직전봉 이전봉
     
     # 1h 기준 변수들
     ma20 = float(prev['ma20'])
@@ -2593,11 +2645,34 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
     sl_price = prev_close * (1 - sl_pct)
     
     # =================================================
-    # 청산 조건 (20 캔들 이후)
+    # 청산 조건 (직전 10 개 캔들 확인)
     # =================================================
     
-    # 직전봉이 ma20 또는 ma25 아래로 종가 마감
-    exit_signal = (prev_close < ma20) or (prev_close < ma25)
+    # 직전 10 개 캔들 [-10:-1]
+    last_10_candles = df.iloc[-10:-1]
+    
+    # 직전 10 개 캔들 각각의 ma20, ma25
+    ma20_10 = last_10_candles['ma20'].values
+    ma25_10 = last_10_candles['ma25'].values
+    close_10 = last_10_candles['close'].values
+    
+    # 조건 1: 직전 10 개 캔들 각각 그때의 ma20 AND ma25 보다 위에 있는지
+    all_above_ma20_25 = all(
+        close_10[i] > ma20_10[i] and close_10[i] > ma25_10[i]
+        for i in range(len(close_10))
+    )
+    
+    # 조건 2: 직전봉의 종가가 ma20 OR ma25 보다 작은지
+    prev_below_ma20_or_25 = (prev_close < ma20) or (prev_close < ma25)
+    
+    # 청산 시그널: 두 조건 모두 만족
+    exit_signal = all_above_ma20_25 and prev_below_ma20_or_25
+    
+    # 추가 정보: 직전 10 개 캔들 중 ma20 or ma25 아래인 캔들이 있는지
+    any_below_ma20_or_25 = any(
+        close_10[i] < ma20_10[i] or close_10[i] < ma25_10[i]
+        for i in range(len(close_10))
+    )
     
     return {
         "entry_signal": entry_signal,
@@ -2610,6 +2685,9 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
         "ma25": ma25,
         "cond_close_above_20_25": cond_close_above_20_25,
         "exit_condition": exit_signal,
+        "all_above_ma20_25": all_above_ma20_25,
+        "prev_below_ma20_or_25": prev_below_ma20_or_25,
+        "any_below_ma20_or_25": any_below_ma20_or_25,
         "sl_pct": sl_pct,
         "sl_price": sl_price,
         "signal_candle_index": len(df) - 1,
@@ -2624,11 +2702,10 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
     - 진입: 1h 봉 ma20/25 돌파 시 (prev2 조건 제거)
     - 손절: -1%
     - 진입 비중: 계좌 잔고의 50%
-    - 청산: 20 캔들 이후, ma20/25 아래로 종가 마감 시
+    - 청산: 직전 10 개 캔들이 모두 ma20/25 위에 있을 때, 직전봉이 ma20/25 아래로 종가 마감
     """
     
     global last_shib_trade_time, last_shib_1h
-    global pending_shib_signal
     
     now = time.time()
     key = (symbol, timeframe)
@@ -2675,43 +2752,33 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
         return
     
     # =================================================
-    # 1) 청산 로직 (20 캔들 이후, ma20/25 아래로 종가 마감)
+    # 1) 청산 로직 (직전 10 개 캔들 확인)
     # =================================================
     
-    if sol_position > 0 and key in pending_shib_signal:
-        pending = pending_shib_signal[key]
-        signal_time = pending["signal_time"]
-        signal_candle_index = pending["signal_candle_index"]
+    if sol_position > 0:
+        # SOL 물량 보유 중
         
-        # 현재 캔들 인덱스
-        current_candle_index = len(df) - 1
-        
-        # 20 캔들 지났는지 확인
-        if current_candle_index - signal_candle_index >= 20:
-            # 청산 조건: 직전봉이 ma20 또는 ma25 아래로 종가 마감
-            if sig["exit_signal"]:
-                # 전량 매도
-                try:
-                    order = exchange.create_market_sell_order(
-                        symbol=symbol,
-                        amount=sol_position
-                    )
-                    print(f"[{symbol} SHIB] 청산 매도 ORDER RESULT={order}")
-                    
-                    last_shib_trade_time = time.time()
-                    if timeframe == '1h':
-                        last_shib_1h = time.time()
-                    
-                    print(f"[{symbol} SHIB] 20 캔들 경과 후 ma20/25 하향 돌파로 청산 | amount={sol_position}")
-                    
-                    # 대기 상태 초기화
-                    del pending_shib_signal[key]
-                    
-                    return
-                    
-                except Exception as e:
-                    print(f"[{symbol} SHIB] 청산 매도 실패: {e}")
-                    return
+        # 청산 조건: 직전 10 개 캔들이 모두 ma20/25 위에 있고, 직전봉이 ma20/25 아래로 종가 마감
+        if sig["exit_signal"]:
+            # 전량 매도
+            try:
+                order = exchange.create_market_sell_order(
+                    symbol=symbol,
+                    amount=sol_position
+                )
+                print(f"[{symbol} SHIB] 청산 매도 ORDER RESULT={order}")
+                
+                last_shib_trade_time = time.time()
+                if timeframe == '1h':
+                    last_shib_1h = time.time()
+                
+                print(f"[{symbol} SHIB] 직전 10 캔들 ma20/25 위 + 직전봉 하향 돌파로 청산 | amount={sol_position}")
+                
+                return
+                
+            except Exception as e:
+                print(f"[{symbol} SHIB] 청산 매도 실패: {e}")
+                return
     
     # =================================================
     # 2) 진입 로직 (기존 포지션이 없을 때만)
@@ -2723,21 +2790,8 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
     
     # 진입 신호 확인
     if sig["entry_signal"]:
-        # 기존에 대기 중인 신호가 없으면 새로 등록
-        if key not in pending_shib_signal:
-            pending_shib_signal[key] = {
-                "signal_info": sig,
-                "signal_time": now,
-                "signal_candle_index": sig["signal_candle_index"],
-                "signal_candle_close": sig["signal_candle_close"],
-                "signal_candle_low": sig["signal_candle_low"],
-            }
-            print(f"[{symbol} SHIB] 진입 신호 발생 → 1 시간봉 대기 시작")
+        print(f"[{symbol} SHIB] 진입 신호 발생 → 1 시간봉 진입")
     else:
-        # 진입 신호가 없으면, 기존 대기 중인 신호도 무효화
-        if key in pending_shib_signal:
-            print(f"[{symbol} SHIB] 진입 신호 소멸 → 대기 상태 초기화")
-            del pending_shib_signal[key]
         return
     
     # =================================================
@@ -2752,7 +2806,6 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
     
     if amount <= 0:
         print(f"[{symbol} SHIB] 주문 수량이 0 이라서 중단")
-        del pending_shib_signal[key]
         return
     
     sl_price = sig["sl_price"]
@@ -2780,9 +2833,6 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
         f"[{symbol} SHIB] 롱 진입 | timeframe={timeframe} | "
         f"amount={amount} | price={current_price} | sl={sl_price}"
     )
-    
-    # 진입 완료 후 대기 상태는 유지 (청산 로직 위해)
-    # del pending_shib_signal[key]  # 삭제하지 않음
     
 def trade_rsi_close_strategy(
     symbol,
@@ -2973,7 +3023,7 @@ def trade_rsi_close_strategy(
 
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | mode={bull_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
     # 숏 처리
@@ -3016,6 +3066,7 @@ def trade_rsi_close_strategy(
 
 
 
+    
 def trade_rsi_close_strategy_current(
     symbol,
     market_id,
@@ -3197,7 +3248,7 @@ def trade_rsi_close_strategy_current(
 
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | mode={bull_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
     # 숏 처리
@@ -3886,7 +3937,7 @@ pending_50ma_close_signal = {}
 while True:
     try:
         now = now_kst()
-
+        
         # -------------------------------------------------
         # SHIB 보유 시 SHIB 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
@@ -3992,10 +4043,10 @@ while True:
                 price_diff_pct=0.004,
                 rsi_raise_pct=0.001,
                 rsi_drop_pct=0.001,
-                min_volatility_30=0.001,
+                min_volatility_30=0.004, # 30은 close 기준으로 바꿈
                 price_diff_pct_30=0.005,
-                rsi_raise_pct_30=0.001,
-                rsi_drop_pct_30=0.001
+                rsi_raise_pct_30=0.01,
+                rsi_drop_pct_30=0.01
             )
 
         # 1시간봉에서 포지션이 안 생겼으면 15분봉 평가
@@ -4013,10 +4064,10 @@ while True:
                 price_diff_pct=0.003,
                 rsi_raise_pct=0.001,
                 rsi_drop_pct=0.001,
-                min_volatility_30=0.0004,
-                price_diff_pct_30=0.003,
-                rsi_raise_pct_30=0.001,
-                rsi_drop_pct_30=0.001
+                min_volatility_30=0.003,
+                price_diff_pct_30=0.004, # 30은 close 기준으로 바꿈
+                rsi_raise_pct_30=0.015,
+                rsi_drop_pct_30=0.015
             )
 
         #   # 현재봉 기준 매매룰 추가  - 데이터만 잡아먹고 별로 실용성이 없어보임
