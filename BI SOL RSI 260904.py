@@ -550,319 +550,6 @@ def get_confirmed_candles_with_rsi(
     return df.dropna(subset=['rsi']).reset_index(drop=True)
 # ===================== RSI 다이버전스 판단 =====================
 
-#12============거래량 장대봉 추세 전략=======
-def analyze_volume_breakout_strategy(
-    symbol,
-    timeframe,
-    df,
-    lookback=35,
-    monitor=30,
-    min_volume_abs=100_000,
-    volume_pct=0.71,
-    bullish_vol_threshold=500_000,
-    bullish_candle_pct=0.005,
-    entry_drop_pct_bullish=0.0045,
-    entry_drop_pct_bearish=0.008,
-    entry_rise_pct_bullish=0.0045,
-    entry_rise_pct_bearish=0.008
-):
-    """
-    거래량 폭발 기준캔들 기반 진입 전략.
-    
-    - 기준캔들: 직전 35 봉 중 거래량 71% 초과하는 캔들 없어야 함 (절대값 100k 이상)
-    - 강세: 변동성 0.5% 이상 + 거래량 500k 이상
-    - 약세: 강세 조건 만족 안 하면
-    - 양봉 롱: 기준캔들 양봉 + 5 봉 전 종가 < 기준캔들 종가
-    - 음봉 숏: 기준캔들 음봉 + 5 봉 전 종가 > 기준캔들 종가
-    - 진입: 기준캔들 이후 30 봉 이내 진입 조건 만족하면
-    """
-    
-    if df is None or len(df) < 66:
-        return None
-    
-    # 현재 진행봉 제외 (df 는 확정봉만)
-    current_idx = len(df) - 1
-    
-    # 기준캔들 인덱스: 현재로부터 36 봉 전 (35 봉 전 + 기준캔들)
-    base_idx = current_idx - 36
-    
-    if base_idx < 0:
-        return None
-    
-    base_candle = df.iloc[base_idx]
-    base_volume = float(base_candle['volume'])
-    base_open = float(base_candle['open'])
-    base_close = float(base_candle['close'])
-    base_high = float(base_candle['high'])
-    base_low = float(base_candle['low'])
-    
-    # 1) 기준캔들 거래량 조건
-    # 절대값 100k 이상
-    if base_volume < min_volume_abs:
-        return None
-    
-    # 직전 35 봉 중 기준캔들 거래량의 71% 넘는 캔들 없어야 함
-    lookback_start = max(0, base_idx - lookback)
-    lookback_volumes = df.iloc[lookback_start:base_idx]['volume']
-    
-    if len(lookback_volumes) == 0:
-        return None
-    
-    max_lookback_volume = lookback_volumes.max()
-    if max_lookback_volume >= base_volume * volume_pct:
-        return None
-    
-    # 2) 기준캔들 강세/약세 조건
-    candle_volatility = abs(base_close - base_open) / base_open
-    is_bullish_base = (
-        candle_volatility >= bullish_candle_pct and
-        base_volume >= bullish_vol_threshold
-    )
-    
-    # 3) 기준캔들 방향
-    is_yangbong = base_close > base_open
-    is_eumbong = base_close < base_open
-    
-    # 5 봉 전 종가
-    five_bars_ago_idx = base_idx - 5
-    if five_bars_ago_idx < 0:
-        return None
-    
-    five_bars_ago_close = float(df.iloc[five_bars_ago_idx]['close'])
-    
-    # ✅ 양봉 롱 전략: 기준캔들 양봉 + 5 봉 전 종가 < 기준캔들 종가
-    cond_long_direction = is_yangbong and (five_bars_ago_close < base_close)
-    
-    # ✅ 음봉 숏 전략: 기준캔들 음봉 + 5 봉 전 종가 > 기준캔들 종가
-    cond_short_direction = is_eumbong and (five_bars_ago_close > base_close)
-    
-    if not (cond_long_direction or cond_short_direction):
-        return None
-    
-    # 4) 진입 조건 확인 (기준캔들 이후 30 봉 이내)
-    # 기준캔들 이후 1~30 봉
-    monitor_start = base_idx + 1
-    monitor_end = min(current_idx, base_idx + monitor)
-    
-    entry_signal = None
-    entry_price = None
-    tp_price = None
-    sl_price = None
-    
-    for i in range(monitor_start, monitor_end + 1):
-        monitor_candle = df.iloc[i]
-        monitor_close = float(monitor_candle['close'])
-        
-        # 양봉 롱 전략
-        if cond_long_direction:
-            if is_bullish_base:
-                # 강세: -0.45%
-                drop_threshold = base_close * (1 - entry_drop_pct_bullish)
-            else:
-                # 약세: -0.8%
-                drop_threshold = base_close * (1 - entry_drop_pct_bearish)
-            
-            if monitor_close <= drop_threshold:
-                # 다음봉에서 진입
-                entry_idx = i + 1
-                if entry_idx > current_idx:
-                    break
-                
-                entry_candle = df.iloc[entry_idx]
-                entry_price = float(entry_candle['open'])
-                
-                # TP: 기준캔들 high * 1.002
-                tp_price = base_high * 1.002
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.8%
-                sl_price = monitor_close * (1 - 0.008)
-                
-                entry_signal = "long"
-                break
-        
-        # 음봉 숏 전략
-        elif cond_short_direction:
-            if is_bullish_base:
-                # 강세: +0.45%
-                rise_threshold = base_close * (1 + entry_rise_pct_bullish)
-            else:
-                # 약세: +0.8%
-                rise_threshold = base_close * (1 + entry_rise_pct_bearish)
-            
-            if monitor_close >= rise_threshold:
-                # 다음봉에서 진입
-                entry_idx = i + 1
-                if entry_idx > current_idx:
-                    break
-                
-                entry_candle = df.iloc[entry_idx]
-                entry_price = float(entry_candle['open'])
-                
-                # TP: 기준캔들 low * 0.998
-                tp_price = base_low * 0.998
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.8%
-                sl_price = monitor_close * (1 + 0.008)
-                
-                entry_signal = "short"
-                break
-    
-    if entry_signal is None:
-        return None
-    
-    return {
-        "signal": True,
-        "side": entry_signal,
-        "timeframe": timeframe,
-        "base_candle_index": base_idx,
-        "base_open": base_open,
-        "base_close": base_close,
-        "base_high": base_high,
-        "base_low": base_low,
-        "base_volume": base_volume,
-        "is_bullish_base": is_bullish_base,
-        "is_yangbong": is_yangbong,
-        "entry_price": entry_price,
-        "tp_price": tp_price,
-        "sl_price": sl_price,
-        "entry_candle_index": entry_idx,
-    }
-    
-def trade_volume_breakout_strategy(
-    symbol,
-    market_id,
-    timeframe='5m',
-    min_volume_abs=100_000,
-    volume_pct=0.71,
-    bullish_vol_threshold=500_000,
-    bullish_candle_pct=0.005,
-    entry_drop_pct_bullish=0.0045,
-    entry_drop_pct_bearish=0.008,
-    entry_rise_pct_bullish=0.0045,
-    entry_rise_pct_bearish=0.008
-):
-    """
-    거래량 폭발 기준캔들 전략 실행.
-    """
-    global last_volume_breakout_trade_time
-    global last_volume_breakout_5m, last_volume_breakout_15m, last_volume_breakout_1h
-    
-    now = time.time()
-    
-    # 공통 60 초 쿨다운
-    if now - last_volume_breakout_trade_time < 60:
-        print(f"[{symbol} VOLUME_BREAKOUT] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_volume_breakout_trade_time:.1f}초 경과)")
-        return
-    
-    # ✅ 5m 전용 쿨다운 (15 분)
-    if timeframe == '5m' and now - last_volume_breakout_5m < 3600:
-        minutes_ago = (now - last_volume_breakout_5m) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (60 분 내 중복매수 금지)")
-        return
-    
-    # ✅ 15m 전용 쿨다운 (45 분)
-    if timeframe == '15m' and now - last_volume_breakout_15m < 10800:
-        minutes_ago = (now - last_volume_breakout_15m) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
-        return
-    
-    # ✅ 1h 전용 쿨다운 (180 분)
-    if timeframe == '1h' and now - last_volume_breakout_1h < 21600:
-        minutes_ago = (now - last_volume_breakout_1h) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
-        return
-    
-    # 마진/레버리지 세팅
-    set_margin_and_leverage(symbol)
-    
-    # ✅ 계좌 잔고 제약 제거
-    current_balance = get_available_usdt()
-    
-    # ✅ SOL 기존 롱 포지션 있으면 진입 금지
-    sol_position = get_position_amount('SOL/USDT')
-    if sol_position > 0:
-        print(f"[{symbol} VOLUME_BREAKOUT] SOL 기존 롱 포지션 있음: {sol_position}개")
-        return
-    
-    # 데이터 조회 (기존 함수 사용)
-    df = get_confirmed_candles_with_rsi(symbol, timeframe, count=70)
-    if df is None or len(df) < 66:
-        print(f"[{symbol} VOLUME_BREAKOUT] 데이터 부족")
-        return
-    
-    # 시그널 분석
-    sig = analyze_volume_breakout_strategy(
-        symbol=symbol,
-        timeframe=timeframe,
-        df=df,
-        lookback=35,
-        monitor=30,
-        min_volume_abs=min_volume_abs,
-        volume_pct=volume_pct,
-        bullish_vol_threshold=bullish_vol_threshold,
-        bullish_candle_pct=bullish_candle_pct,
-        entry_drop_pct_bullish=entry_drop_pct_bullish,
-        entry_drop_pct_bearish=entry_drop_pct_bearish,
-        entry_rise_pct_bullish=entry_rise_pct_bullish,
-        entry_rise_pct_bearish=entry_rise_pct_bearish
-    )
-    
-    if not sig or not sig["signal"]:
-        return
-    
-    # 진입
-    entry_price = sig["entry_price"]
-    tp_price = sig["tp_price"]
-    sl_price = sig["sl_price"]
-    side = sig["side"]
-    
-    # 주문 수량 계산
-    margin_to_use = current_balance * 0.5
-    notional = margin_to_use * LEVERAGE
-    amount = round(notional / entry_price, 3)
-    
-    if amount <= 0:
-        print(f"[{symbol} VOLUME_BREAKOUT] 주문 수량 0")
-        return
-    
-    try:
-        if side == "long":
-            order = exchange.create_market_buy_order(symbol, amount)
-        else:
-            order = exchange.create_market_sell_order(symbol, amount)
-        
-        print(f"[{symbol} VOLUME_BREAKOUT] ORDER RESULT={order}")
-    except Exception as e:
-        print(f"[{symbol} VOLUME_BREAKOUT] 주문 실패: {e}")
-        return
-    
-    # 쿨다운 갱신
-    last_volume_breakout_trade_time = time.time()
-    if timeframe == '5m':
-        last_volume_breakout_5m = time.time()
-    elif timeframe == '15m':
-        last_volume_breakout_15m = time.time()
-    elif timeframe == '1h':
-        last_volume_breakout_1h = time.time()
-    
-    # TP/SL 설정
-    if side == "long":
-        place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, sl_price)
-    else:
-        place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-    
-    print(
-        f"[{symbol} VOLUME_BREAKOUT] {side.upper()} 진입 | "
-        f"price={entry_price} | tp={tp_price} | sl={sl_price}"
-    )    
-
-
-#============거래량 장대봉 추세 전략=======
-
-
-
 #==========5m봉 급락시 진입 전략========
 def analyze_volume_spike_drop(
     symbol,
@@ -2958,21 +2645,21 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
     sl_price = prev_close * (1 - sl_pct)
     
     # =================================================
-    # 청산 조건 (직전 20 개 캔들 확인)
+    # 청산 조건 (직전 10 개 캔들 확인)
     # =================================================
     
-    # 직전 20 캔들 [-20:-1]
-    last_20_candles = df.iloc[-20:-1]
+    # 직전 10 개 캔들 [-10:-1]
+    last_10_candles = df.iloc[-10:-1]
     
-    # 직전 20 개 캔들 각각의 ma20, ma25
-    ma20_20 = last_20_candles['ma20'].values
-    ma25_20 = last_20_candles['ma25'].values
-    close_20 = last_20_candles['close'].values
+    # 직전 10 개 캔들 각각의 ma20, ma25
+    ma20_10 = last_10_candles['ma20'].values
+    ma25_10 = last_10_candles['ma25'].values
+    close_10 = last_10_candles['close'].values
     
-    # 조건 1: 직전 20 개 캔들 각각 그때의 ma20 AND ma25 보다 위에 있는지
+    # 조건 1: 직전 10 개 캔들 각각 그때의 ma20 AND ma25 보다 위에 있는지
     all_above_ma20_25 = all(
-        close_20[i] > ma20_20[i] and close_20[i] > ma25_20[i]
-        for i in range(len(close_20))
+        close_10[i] > ma20_10[i] and close_10[i] > ma25_10[i]
+        for i in range(len(close_10))
     )
     
     # 조건 2: 직전봉의 종가가 ma20 OR ma25 보다 작은지
@@ -2981,10 +2668,10 @@ def analyze_shib_ma20_25_breakout(symbol, timeframe, df_cache):
     # 청산 시그널: 두 조건 모두 만족
     exit_signal = all_above_ma20_25 and prev_below_ma20_or_25
     
-    # 추가 정보: 직전 20 개 캔들 중 ma20 or ma25 아래인 캔들이 있는지
+    # 추가 정보: 직전 10 개 캔들 중 ma20 or ma25 아래인 캔들이 있는지
     any_below_ma20_or_25 = any(
-        close_20[i] < ma20_20[i] or close_20[i] < ma25_20[i]
-        for i in range(len(close_20))
+        close_10[i] < ma20_10[i] or close_10[i] < ma25_10[i]
+        for i in range(len(close_10))
     )
     
     return {
@@ -4282,12 +3969,6 @@ pending_shib_signal = {}
 
 pending_50ma_close_signal = {}
 
-# ✅ VOLUME_BREAKOUT 전략용 전역 변수
-last_volume_breakout_trade_time = 0
-last_volume_breakout_5m = 0
-last_volume_breakout_15m = 0
-last_volume_breakout_1h = 0
-
 while True:
     try:
         now = now_kst()
@@ -4511,59 +4192,9 @@ while True:
             )
 
 
-        time.sleep(2) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
-
-        # SOL/USDT 5m VOLUME_BREAKOUT
-        if not has_position(MARKET_ID_SOL):
-            trade_volume_breakout_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='5m',
-                min_volume_abs=100_000,
-                volume_pct=0.71,
-                bullish_vol_threshold=500_000,
-                bullish_candle_pct=0.005,
-                entry_drop_pct_bullish=0.0045,
-                entry_drop_pct_bearish=0.008,
-                entry_rise_pct_bullish=0.0045,
-                entry_rise_pct_bearish=0.008
-            )
+        time.sleep(3) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
+        # 1시간봉 전략
         
-        # SOL/USDT 15m VOLUME_BREAKOUT #(필요시)
-        # if not has_position(MARKET_ID_SOL):
-        #     trade_volume_breakout_strategy(
-        #         symbol=SOL_SYMBOL,
-        #         market_id=MARKET_ID_SOL,
-        #         timeframe='15m'
-        #         min_volume_abs=100_000,
-        #         volume_pct=0.71,
-        #         bullish_vol_threshold=500_000,
-        #         bullish_candle_pct=0.005,
-        #         entry_drop_pct_bullish=0.0045,
-        #         entry_drop_pct_bearish=0.008,
-        #         entry_rise_pct_bullish=0.0045,
-        #         entry_rise_pct_bearish=0.008
-        #     )        
-
-        # SOL/USDT 1h VOLUME_BREAKOUT #(필요시)
-        # if not has_position(MARKET_ID_SOL):
-        #     trade_volume_breakout_strategy(
-        #         symbol=SOL_SYMBOL,
-        #         market_id=MARKET_ID_SOL,
-        #         timeframe='1h'
-        #         min_volume_abs=100_000,
-        #         volume_pct=0.71,
-        #         bullish_vol_threshold=500_000,
-        #         bullish_candle_pct=0.005,
-        #         entry_drop_pct_bullish=0.0045,
-        #         entry_drop_pct_bearish=0.008,
-        #         entry_rise_pct_bullish=0.0045,
-        #         entry_rise_pct_bearish=0.008
-        #     ) 
-        time.sleep(2)
-
-
-        # 1시간봉 전략        
         if not has_position(MARKET_ID_SOL):
             trade_rsi_strategy(
                 symbol=SOL_SYMBOL,
@@ -4593,7 +4224,7 @@ while True:
                 min_range_volatility=0.01   #15봉 변동성 1% 미만시 진입 금지             
             )
 
-        time.sleep(1) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이            
+        time.sleep(2) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이            
         # XRP 보유 시 추매전략
         xrp_position = get_position_amount('XRP/USDT')
 
