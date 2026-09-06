@@ -559,8 +559,8 @@ def analyze_volume_breakout_strategy(
     monitor=30,
     min_volume_abs=100_000,
     volume_pct=0.71,
-    bullish_vol_threshold=500_000,
-    bullish_candle_pct=0.005,
+    bullish_vol_threshold=650_000,
+    bullish_candle_pct=0.0065,
     entry_drop_pct_bullish=0.0045,
     entry_drop_pct_bearish=0.008,
     entry_rise_pct_bullish=0.0045,
@@ -570,11 +570,12 @@ def analyze_volume_breakout_strategy(
     거래량 폭발 기준캔들 기반 진입 전략.
     
     - 기준캔들: 직전 35 봉 중 거래량 71% 초과하는 캔들 없어야 함 (절대값 100k 이상)
-    - 강세: 변동성 0.5% 이상 + 거래량 500k 이상
+    - 강세: 변동성 0.65% 이상 + 거래량 650k 이상
     - 약세: 강세 조건 만족 안 하면
     - 양봉 롱: 기준캔들 양봉 + 5 봉 전 종가 < 기준캔들 종가
     - 음봉 숏: 기준캔들 음봉 + 5 봉 전 종가 > 기준캔들 종가
-    - 진입: 기준캔들 이후 30 봉 이내 진입 조건 만족하면
+    - 진입: 기준캔들 이후 30 봉 이내 진입 조건 만족하면 (다음봉 아님, 바로 진입)
+    - TP: 기준캔들 윗꼬리/아래꼬리 변동성 1% 이상이면 TP 축소
     """
     
     if df is None or len(df) < 66:
@@ -639,6 +640,16 @@ def analyze_volume_breakout_strategy(
     if not (cond_long_direction or cond_short_direction):
         return None
     
+    # ✅ 기준캔들 윗꼬리/아래꼬리 변동성 계산
+    # 양봉: 윗꼬리 = high - close
+    # 음봉: 아래꼬리 = close - low
+    if is_yangbong:
+        upper_shadow = base_high - base_close
+        upper_shadow_volatility = upper_shadow / base_close
+    else:
+        lower_shadow = base_close - base_low
+        lower_shadow_volatility = lower_shadow / base_close
+    
     # 4) 진입 조건 확인 (기준캔들 이후 30 봉 이내)
     # 기준캔들 이후 1~30 봉
     monitor_start = base_idx + 1
@@ -648,10 +659,12 @@ def analyze_volume_breakout_strategy(
     entry_price = None
     tp_price = None
     sl_price = None
+    entry_idx = None
     
     for i in range(monitor_start, monitor_end + 1):
         monitor_candle = df.iloc[i]
         monitor_close = float(monitor_candle['close'])
+        monitor_open = float(monitor_candle['open'])
         
         # 양봉 롱 전략
         if cond_long_direction:
@@ -662,20 +675,19 @@ def analyze_volume_breakout_strategy(
                 # 약세: -0.8%
                 drop_threshold = base_close * (1 - entry_drop_pct_bearish)
             
+            # ✅ 직전봉 종가가 Threshold 미만이면 진입 (다음봉 아님)
             if monitor_close <= drop_threshold:
-                # 다음봉에서 진입
-                entry_idx = i + 1
-                if entry_idx > current_idx:
-                    break
+                entry_idx = i
+                entry_price = monitor_open  # 진입가는 해당 봉의 시가
                 
-                entry_candle = df.iloc[entry_idx]
-                entry_price = float(entry_candle['open'])
+                # ✅ TP: 기준캔들 윗꼬리 변동성 1% 이상이면 (H+C)/2*1.002, 아니면 base_high*1.002
+                if is_yangbong and upper_shadow_volatility >= 0.01:
+                    tp_price = ((base_high + base_close) / 2) * 1.002
+                else:
+                    tp_price = base_high * 1.002
                 
-                # TP: 기준캔들 high * 1.002
-                tp_price = base_high * 1.002
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.8%
-                sl_price = monitor_close * (1 - 0.008)
+                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.6%
+                sl_price = monitor_close * (1 - 0.006)
                 
                 entry_signal = "long"
                 break
@@ -689,25 +701,24 @@ def analyze_volume_breakout_strategy(
                 # 약세: +0.8%
                 rise_threshold = base_close * (1 + entry_rise_pct_bearish)
             
+            # ✅ 직전봉 종가가 Threshold 초과이면 진입 (다음봉 아님)
             if monitor_close >= rise_threshold:
-                # 다음봉에서 진입
-                entry_idx = i + 1
-                if entry_idx > current_idx:
-                    break
+                entry_idx = i
+                entry_price = monitor_open  # 진입가는 해당 봉의 시가
                 
-                entry_candle = df.iloc[entry_idx]
-                entry_price = float(entry_candle['open'])
+                # ✅ TP: 기준캔들 아래꼬리 변동성 1% 이상이면 (L+C)/2*0.998, 아니면 base_low*0.998
+                if is_eumbong and lower_shadow_volatility >= 0.01:
+                    tp_price = ((base_low + base_close) / 2) * 0.998
+                else:
+                    tp_price = base_low * 0.998
                 
-                # TP: 기준캔들 low * 0.998
-                tp_price = base_low * 0.998
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.8%
-                sl_price = monitor_close * (1 + 0.008)
+                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.6%
+                sl_price = monitor_close * (1 + 0.006)
                 
                 entry_signal = "short"
                 break
     
-    if entry_signal is None:
+    if entry_signal is None or entry_idx is None:
         return None
     
     return {
@@ -755,7 +766,7 @@ def trade_volume_breakout_strategy(
         return
     
     # ✅ 5m 전용 쿨다운 (15 분)
-    if timeframe == '5m' and now - last_volume_breakout_5m < 3600:
+    if timeframe == '5m' and now - last_volume_breakout_5m < 2700:
         minutes_ago = (now - last_volume_breakout_5m) / 60
         print(f"[{symbol} VOLUME_BREAKOUT 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (60 분 내 중복매수 금지)")
         return
@@ -948,8 +959,8 @@ def analyze_volume_spike_drop(
         vol_mult_exc1 = 2.0
         vol_mult_exc2 = 1.5
     else:  # short
-        range_vol_threshold = 0.015
-        vol_mult_base = 4.0
+        range_vol_threshold = 0.01
+        vol_mult_base = 3.0
         vol_mult_exc1 = None  # 숏은 예외 조건 없음
         vol_mult_exc2 = None
 
@@ -4521,8 +4532,8 @@ while True:
                 timeframe='5m',
                 min_volume_abs=100_000,
                 volume_pct=0.71,
-                bullish_vol_threshold=500_000,
-                bullish_candle_pct=0.005,
+                bullish_vol_threshold=650_000,
+                bullish_candle_pct=0.0065,
                 entry_drop_pct_bullish=0.0045,
                 entry_drop_pct_bearish=0.008,
                 entry_rise_pct_bullish=0.0045,
