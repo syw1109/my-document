@@ -551,6 +551,9 @@ def get_confirmed_candles_with_rsi(
 # ===================== RSI 다이버전스 판단 =====================
 
 #12============거래량 장대봉 추세 전략=======
+# 전역 변수 추가
+pending_volume_breakout_signal = {}
+
 def analyze_volume_breakout_strategy(
     symbol,
     timeframe,
@@ -737,16 +740,19 @@ def analyze_volume_breakout_strategy(
         "tp_price": tp_price,
         "sl_price": sl_price,
         "entry_candle_index": entry_idx,
+        "signal_candle_index": base_idx,  # ✅ 추가: 기준캔들 인덱스
+        "signal_candle_close": base_close,  # ✅ 추가: 기준캔들 종가
     }
-    
+
+
 def trade_volume_breakout_strategy(
     symbol,
     market_id,
     timeframe='5m',
     min_volume_abs=100_000,
     volume_pct=0.71,
-    bullish_vol_threshold=500_000,
-    bullish_candle_pct=0.005,
+    bullish_vol_threshold=650_000,
+    bullish_candle_pct=0.0065,
     entry_drop_pct_bullish=0.0045,
     entry_drop_pct_bearish=0.008,
     entry_rise_pct_bullish=0.0045,
@@ -754,31 +760,34 @@ def trade_volume_breakout_strategy(
 ):
     """
     거래량 폭발 기준캔들 전략 실행.
+    - 기준캔들 발생 시 시그널로 받아들이고, 이후 30 봉 동안 진입 조건 모니터링
     """
     global last_volume_breakout_trade_time
     global last_volume_breakout_5m, last_volume_breakout_15m, last_volume_breakout_1h
+    global pending_volume_breakout_signal
     
     now = time.time()
+    key = (symbol, timeframe)
     
     # 공통 60 초 쿨다운
     if now - last_volume_breakout_trade_time < 60:
         print(f"[{symbol} VOLUME_BREAKOUT] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_volume_breakout_trade_time:.1f}초 경과)")
         return
     
-    # ✅ 5m 전용 쿨다운 (15 분)
+    # ✅ 5m 전용 쿨다운 (45 분)
     if timeframe == '5m' and now - last_volume_breakout_5m < 2700:
         minutes_ago = (now - last_volume_breakout_5m) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (60 분 내 중복매수 금지)")
+        print(f"[{symbol} VOLUME_BREAKOUT 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
     
     # ✅ 15m 전용 쿨다운 (45 분)
-    if timeframe == '15m' and now - last_volume_breakout_15m < 10800:
+    if timeframe == '15m' and now - last_volume_breakout_15m < 2700:
         minutes_ago = (now - last_volume_breakout_15m) / 60
         print(f"[{symbol} VOLUME_BREAKOUT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
     
     # ✅ 1h 전용 쿨다운 (180 분)
-    if timeframe == '1h' and now - last_volume_breakout_1h < 21600:
+    if timeframe == '1h' and now - last_volume_breakout_1h < 10800:
         minutes_ago = (now - last_volume_breakout_1h) / 60
         print(f"[{symbol} VOLUME_BREAKOUT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
         return
@@ -818,26 +827,123 @@ def trade_volume_breakout_strategy(
         entry_rise_pct_bearish=entry_rise_pct_bearish
     )
     
-    if not sig or not sig["signal"]:
+    # 1) 기준캔들 시그널 발생 확인
+    if sig and sig["signal"]:
+        if key not in pending_volume_breakout_signal:
+            pending_volume_breakout_signal[key] = {
+                "signal_info": sig,
+                "signal_time": now,
+                "signal_candle_index": sig["signal_candle_index"],
+                "signal_candle_close": sig["signal_candle_close"],
+                "base_high": sig["base_high"],
+                "base_low": sig["base_low"],
+                "is_bullish_base": sig["is_bullish_base"],
+                "is_yangbong": sig["is_yangbong"],
+            }
+            print(f"[{symbol} VOLUME_BREAKOUT] 기준캔들 시그널 발생 → 30 봉 동안 진입 조건 모니터링 (timeframe={timeframe})")
+        # ✅ 기준캔들 시그널 발생 시 바로 진입하지 않음 (모니터링 시작)
         return
     
-    # 진입
-    entry_price = sig["entry_price"]
-    tp_price = sig["tp_price"]
-    sl_price = sig["sl_price"]
-    side = sig["side"]
+    # 2) 대기 중인 신호가 있으면, 진입 조건 확인
+    if key not in pending_volume_breakout_signal:
+        return
     
-    # 주문 수량 계산
+    pending = pending_volume_breakout_signal[key]
+    sig_info = pending["signal_info"]
+    signal_candle_index = pending["signal_candle_index"]
+    signal_candle_close = pending["signal_candle_close"]
+    base_high = pending["base_high"]
+    base_low = pending["base_low"]
+    is_bullish_base = pending["is_bullish_base"]
+    is_yangbong = pending["is_yangbong"]
+    
+    # 기준캔들 이후 30 봉 초과 확인
+    current_candle_index = len(df) - 1
+    if current_candle_index - signal_candle_index > 30:
+        print(f"[{symbol} VOLUME_BREAKOUT] 기준캔들 이후 30 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
+        del pending_volume_breakout_signal[key]
+        return
+    
+    # 3) 진입 조건 확인 (기준캔들 이후 1~30 봉)
+    monitor_start = signal_candle_index + 1
+    monitor_end = current_candle_index
+    
+    entry_price = None
+    tp_price = None
+    sl_price = None
+    entry_idx = None
+    
+    for i in range(monitor_start, monitor_end + 1):
+        monitor_candle = df.iloc[i]
+        monitor_close = float(monitor_candle['close'])
+        monitor_open = float(monitor_candle['open'])
+        
+        # 양봉 롱 전략
+        if is_yangbong:
+            if is_bullish_base:
+                # 강세: -0.45%
+                drop_threshold = signal_candle_close * (1 - entry_drop_pct_bullish)
+            else:
+                # 약세: -0.8%
+                drop_threshold = signal_candle_close * (1 - entry_drop_pct_bearish)
+            
+            if monitor_close <= drop_threshold:
+                entry_idx = i
+                entry_price = monitor_open
+                
+                # TP: 기준캔들 윗꼬리 변동성 1% 이상이면 (H+C)/2*1.002, 아니면 base_high*1.002
+                upper_shadow = base_high - signal_candle_close
+                upper_shadow_volatility = upper_shadow / signal_candle_close
+                if is_yangbong and upper_shadow_volatility >= 0.01:
+                    tp_price = ((base_high + signal_candle_close) / 2) * 1.002
+                else:
+                    tp_price = base_high * 1.002
+                
+                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.6%
+                sl_price = monitor_close * (1 - 0.006)
+                break
+        
+        # 음봉 숏 전략
+        else:
+            if is_bullish_base:
+                # 강세: +0.45%
+                rise_threshold = signal_candle_close * (1 + entry_rise_pct_bullish)
+            else:
+                # 약세: +0.8%
+                rise_threshold = signal_candle_close * (1 + entry_rise_pct_bearish)
+            
+            if monitor_close >= rise_threshold:
+                entry_idx = i
+                entry_price = monitor_open
+                
+                # TP: 기준캔들 아래꼬리 변동성 1% 이상이면 (L+C)/2*0.998, 아니면 base_low*0.998
+                lower_shadow = signal_candle_close - base_low
+                lower_shadow_volatility = lower_shadow / signal_candle_close
+                if not is_yangbong and lower_shadow_volatility >= 0.01:
+                    tp_price = ((base_low + signal_candle_close) / 2) * 0.998
+                else:
+                    tp_price = base_low * 0.998
+                
+                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.6%
+                sl_price = monitor_close * (1 + 0.006)
+                break
+    
+    if entry_price is None:
+        return
+    
+    # 4) 실제 매수 로직
+    current_price = entry_price
     margin_to_use = current_balance * 0.5
     notional = margin_to_use * LEVERAGE
-    amount = round(notional / entry_price, 3)
+    amount = round(notional / current_price, 3)
     
     if amount <= 0:
-        print(f"[{symbol} VOLUME_BREAKOUT] 주문 수량 0")
+        print(f"[{symbol} VOLUME_BREAKOUT] 주문 수량이 0 이라서 중단")
+        del pending_volume_breakout_signal[key]
         return
     
     try:
-        if side == "long":
+        if is_yangbong:
             order = exchange.create_market_buy_order(symbol, amount)
         else:
             order = exchange.create_market_sell_order(symbol, amount)
@@ -857,7 +963,7 @@ def trade_volume_breakout_strategy(
         last_volume_breakout_1h = time.time()
     
     # TP/SL 설정
-    if side == "long":
+    if is_yangbong:
         place_tp_long(symbol, amount, tp_price)
         place_sl_long(symbol, sl_price)
     else:
@@ -865,16 +971,19 @@ def trade_volume_breakout_strategy(
         place_sl_short(symbol, sl_price)
     
     print(
-        f"[{symbol} VOLUME_BREAKOUT] {side.upper()} 진입 | "
+        f"[{symbol} VOLUME_BREAKOUT] {('LONG' if is_yangbong else 'SHORT')} 진입 | "
         f"price={entry_price} | tp={tp_price} | sl={sl_price}"
-    )    
+    )
+    
+    # 진입 완료 후 대기 상태 초기화
+    del pending_volume_breakout_signal[key]    
 
 
 #============거래량 장대봉 추세 전략=======
 
 
 
-#==========5m봉 급락시 진입 전략========
+#7 ==========5m봉 급락시 진입 전략========
 def analyze_volume_spike_drop(
     symbol,
     timeframe,
@@ -912,6 +1021,17 @@ def analyze_volume_spike_drop(
       * 변동성 >= 0.35% 인 음봉 >= 3
       * 그중 꼬리가 몸통의 1/3 이상인 캔들 >= 2
     → 직전 3 개봉 [-4:-1] 거래량 평균의 1.5 배 이상이면 OK
+
+    예외 조건 3, 4, 5 (롱/숏 공통):
+    - 공통 조건 1:
+      * 롱: 직전 12 개봉 중 (직전 11 개봉 high)*1.001 < 직전봉 종가
+      * 숏: 직전 12 개봉 중 (직전 11 개봉 high)*0.999 > 직전봉 종가
+    - 공통 조건 2: 캔들 변동성 0.1% 이상인데 꼬리가 0.4% 이상
+      * 꼬리 2 개 또는 0.4% 캔들 1 개로 취급
+
+    - 진입 예외 조건 3: 캔들 변동성 0.3% 이상 3 개, 0.4% 이상 1 개 + 꼬리 2 개 이상
+    - 진입 예외 조건 4: 0.2% 3 개 이상, 0.5% 2 개 이상 + 꼬리 2 개 이상
+    - 진입 예외 조건 5: 0.5% 3 개이상 + 0.4% 4 개이상 이면 꼬리 1 개로 진입 가능
     """
 
     if df is None:
@@ -927,6 +1047,8 @@ def analyze_volume_spike_drop(
     last_4_ex_prev = df.iloc[-5:-1]  # 직전봉의 직전 4 개봉
     last_3_ex_prev = df.iloc[-4:-1]  # 직전봉의 직전 3 개봉
     last_9_incl_prev = df.iloc[-9:]  # 직전봉 포함 9 개봉
+    last_12_incl_prev = df.iloc[-12:]  # 직전봉 포함 12 개봉
+    last_11_ex_prev = df.iloc[-12:-1]  # 직전봉의 직전 11 개봉
 
     # -------------------------------------------------
     # 1) range_volatility 계산 (직전봉의 직전 8 개봉)
@@ -1005,7 +1127,7 @@ def analyze_volume_spike_drop(
     cond_vol_base = cond_vol_base and cond_abs_vol and cond_max_vol
 
     # -------------------------------------------------
-    # 4) 롱일 때만 예외 조건 처리
+    # 4) 롱일 때만 예외 조건 처리 (기존 exc1, exc2)
     # -------------------------------------------------
     cond_exc1 = False
     cond_exc2 = False
@@ -1101,6 +1223,129 @@ def analyze_volume_spike_drop(
             if cond_exc2:
                 cond_vol_base = (vol_ratio >= vol_mult_exc2) and cond_abs_vol and cond_max_vol
 
+    # -------------------------------------------------
+    # 5) 예외 조건 3, 4, 5 (롱/숏 공통, 기존과 독립적)
+    # -------------------------------------------------
+    cond_exc3 = False
+    cond_exc4 = False
+    cond_exc5 = False
+
+    if not cond_vol_base:
+        # 공통 조건 1: 직전 12 개봉 중 (직전 11 개봉 high) 기준
+        max_high_11 = last_11_ex_prev['high'].max()
+        
+        if side == 'long':
+            # 롱: (직전 11 개봉 high)*1.001 < 직전봉 종가
+            cond_common1 = prev['close'] > max_high_11 * 1.001
+        else:
+            # 숏: (직전 11 개봉 high)*0.999 > 직전봉 종가
+            cond_common1 = prev['close'] < max_high_11 * 0.999
+        
+        # 공통 조건 2: 캔들 변동성 0.1% 이상인데 꼬리가 0.4% 이상
+        # ✅ 롱: 음봉의 아래꼬리 (close - low)
+        # ✅ 숏: 양봉의 윗꼬리 (high - close)
+        # 몸통: abs(open - close)
+        
+        # 직전 12 개봉 중 변동성 0.1% 이상인 캔들 필터
+        candles_12 = last_12_incl_prev
+        body_12 = abs(candles_12['open'] - candles_12['close'])
+        volatility_12 = body_12 / candles_12['open']
+        
+        # 변동성 0.1% 이상인 캔들만 필터
+        cond_vol_01 = volatility_12 >= 0.001
+        
+        if side == 'long':
+            # ✅ 롱: 음봉만 (close < open)
+            cond_bearish = candles_12['close'] < candles_12['open']
+            # ✅ 롱: 아래꼬리 = close - low
+            tail_12 = candles_12['close'] - candles_12['low']
+        else:
+            # ✅ 숏: 양봉만 (close > open)
+            cond_bearish = candles_12['close'] > candles_12['open']
+            # ✅ 숏: 윗꼬리 = high - close
+            tail_12 = candles_12['high'] - candles_12['close']
+        
+        tail_ratio_12 = tail_12 / body_12.replace(0, np.nan)
+        cond_tail_04 = tail_ratio_12 >= (0.004 / candles_12['open'])  # 0.4% 절대값
+        
+        # 꼬리 2 개 또는 0.4% 캔들 1 개로 취급
+        # 꼬리 개수: 변동성 0.1% 이상 + 꼬리 0.4% 이상
+        tail_count = (cond_vol_01 & cond_tail_04 & cond_bearish).sum()
+        
+        # 0.4% 캔들 1 개: 변동성 0.1% 이상 + 꼬리 0.4% 이상인 캔들 중 1 개
+        cond_common2 = tail_count >= 2 or (tail_count >= 1 and (cond_vol_01 & cond_tail_04 & cond_bearish).any())
+        
+        # 공통 조건 1 AND 공통 조건 2
+        cond_common = cond_common1 and cond_common2
+        
+        if cond_common:
+            # ✅ 롱: 음봉 변동성, 숏: 양봉 변동성
+            if side == 'long':
+                # ✅ 롱: 음봉만 (close < open)
+                bearish_candles_12 = candles_12[candles_12['close'] < candles_12['open']]
+                if len(bearish_candles_12) > 0:
+                    vola_bearish_12 = (
+                        (bearish_candles_12['open'] - bearish_candles_12['close'])
+                        / bearish_candles_12['open']
+                    )
+                else:
+                    vola_bearish_12 = pd.Series(dtype='float64')
+            else:
+                # ✅ 숏: 양봉만 (close > open)
+                bullish_candles_12 = candles_12[candles_12['close'] > candles_12['open']]
+                if len(bullish_candles_12) > 0:
+                    vola_bullish_12 = (
+                        (bullish_candles_12['close'] - bullish_candles_12['open'])
+                        / bullish_candles_12['open']
+                    )
+                else:
+                    vola_bullish_12 = pd.Series(dtype='float64')
+            
+            if side == 'long':
+                # 진입 예외 조건 3: 캔들 변동성 0.3% 이상 3 개, 0.4% 이상 1 개 + 꼬리 2 개 이상
+                cond_vol_03 = (vola_bearish_12 >= 0.003).sum() >= 3
+                cond_vol_04 = (vola_bearish_12 >= 0.004).sum() >= 1
+                cond_tail_2 = tail_count >= 2
+                
+                cond_exc3 = cond_vol_03 and cond_vol_04 and cond_tail_2
+                
+                # 진입 예외 조건 4: 0.2% 3 개 이상, 0.5% 2 개 이상 + 꼬리 2 개 이상
+                cond_vol_02 = (vola_bearish_12 >= 0.002).sum() >= 3
+                cond_vol_05 = (vola_bearish_12 >= 0.005).sum() >= 2
+                cond_tail_2_v2 = tail_count >= 2
+                
+                cond_exc4 = cond_vol_02 and cond_vol_05 and cond_tail_2_v2
+                
+                # 진입 예외 조건 5: 0.5% 3 개이상 + 0.4% 4 개이상 이면 꼬리 1 개로 진입 가능
+                cond_vol_05_v2 = (vola_bearish_12 >= 0.005).sum() >= 3
+                cond_vol_04_v2 = (vola_bearish_12 >= 0.004).sum() >= 4
+                cond_tail_1 = tail_count >= 1
+                
+                cond_exc5 = cond_vol_05_v2 and cond_vol_04_v2 and cond_tail_1
+            else:
+                # ✅ 숏: 양봉 변동성
+                cond_vol_03 = (vola_bullish_12 >= 0.003).sum() >= 3
+                cond_vol_04 = (vola_bullish_12 >= 0.004).sum() >= 1
+                cond_tail_2 = tail_count >= 2
+                
+                cond_exc3 = cond_vol_03 and cond_vol_04 and cond_tail_2
+                
+                cond_vol_02 = (vola_bullish_12 >= 0.002).sum() >= 3
+                cond_vol_05 = (vola_bullish_12 >= 0.005).sum() >= 2
+                cond_tail_2_v2 = tail_count >= 2
+                
+                cond_exc4 = cond_vol_02 and cond_vol_05 and cond_tail_2_v2
+                
+                cond_vol_05_v2 = (vola_bullish_12 >= 0.005).sum() >= 3
+                cond_vol_04_v2 = (vola_bullish_12 >= 0.004).sum() >= 4
+                cond_tail_1 = tail_count >= 1
+                
+                cond_exc5 = cond_vol_05_v2 and cond_vol_04_v2 and cond_tail_1
+            
+            # ✅ 예외 조건 3, 4, 5 중 하나라도 만족하면 거래량 조건 없이 바로 진입
+            if cond_exc3 or cond_exc4 or cond_exc5:
+                cond_vol_base = True
+
     # 최종 시그널
     signal = cond_range_and_direction and cond_vol_base
 
@@ -1121,9 +1366,9 @@ def analyze_volume_spike_drop(
         "cond_max_volume": cond_max_vol,
         "vol_mult_required": (
             vol_mult_base
-            if cond_vol_base and (side == 'short' or (cond_exc1 is False and cond_exc2 is False))
+            if cond_vol_base and (side == 'short' or (cond_exc1 is False and cond_exc2 is False and cond_exc3 is False and cond_exc4 is False and cond_exc5 is False))
             else (
-                vol_mult_exc1 if cond_exc1 else vol_mult_exc2
+                vol_mult_exc1 if cond_exc1 else (vol_mult_exc2 if cond_exc2 else 2.0)
             )
         ),
 
@@ -1134,6 +1379,13 @@ def analyze_volume_spike_drop(
         # 롱 전용 예외 조건 정보
         "cond_exc1": cond_exc1 if side == 'long' else None,
         "cond_exc2": cond_exc2 if side == 'long' else None,
+        
+        # 롱/숏 공통 예외 조건 정보
+        "cond_exc3": cond_exc3,
+        "cond_exc4": cond_exc4,
+        "cond_exc5": cond_exc5,
+        "cond_common1": cond_common1 if (cond_exc3 or cond_exc4 or cond_exc5) else None,
+        "cond_common2": cond_common2 if (cond_exc3 or cond_exc4 or cond_exc5) else None,
 
         # 직전봉 정보
         "prev_open": float(prev['open']),
@@ -1145,7 +1397,150 @@ def analyze_volume_spike_drop(
         "tp_price": float(prev['close']) * (1 + (0.01 if side == 'long' else -0.01)),
         "sl_price": float(prev['close']) * (1 - (0.007 if side == 'long' else -0.007))
     }
+  
+# 5분봉 거래량 급등 롱   
     
+def trade_rsi_close_strategy_link(
+    symbol,
+    market_id,
+    timeframe,
+    side,
+    tp_pct_1,
+    tp_pct_2=None,
+    min_volatility=0.003,
+    price_diff_pct=0.001,
+    rsi_raise_pct=0.003,
+    rsi_drop_pct=0.003,
+    min_range_volatility=0.015
+):
+    global last_link_long_trade_time, last_link_short_trade_time
+    global last_link_long_5m, last_link_short_5m
+
+    now = time.time()
+
+    if side == 'long':
+        if now - last_link_long_trade_time < 60:
+            print(f"[{symbol} LINK_LONG] 60 초 쿨다운 중 진입 금지")
+            return
+        if timeframe == '5m' and now - last_link_long_5m < 400:
+            minutes_ago = (now - last_link_long_5m) / 60
+            print(f"[{symbol} LINK_LONG 5m] 최근 {minutes_ago:.1f}분 전에 매수됨 (6 분 내 중복매수 금지)")
+            return
+    else:
+        if now - last_link_short_trade_time < 60:
+            print(f"[{symbol} LINK_SHORT] 60 초 쿨다운 중 진입 금지")
+            return
+        if timeframe == '5m' and now - last_link_short_5m < 400:
+            minutes_ago = (now - last_link_short_5m) / 60
+            print(f"[{symbol} LINK_SHORT 5m] 최근 {minutes_ago:.1f}분 전에 매도됨 (6 분 내 중복매도 금지)")
+            return
+
+    set_margin_and_leverage(symbol)
+    current_balance = get_available_usdt()
+
+    if current_balance < 2500 or current_balance > 12000:
+        print(f"[{symbol}] 계좌 잔고 {current_balance:.2f} USD 범위 밖이므로 진입 금지")
+        return
+
+    link_position = get_position_amount('LINK/USDT')
+    sol_position = get_position_amount('SOL/USDT')
+
+    if side == 'long':
+        if link_position <= 0:
+            print(f"[{symbol} LINK_LONG] LINK 롱 포지션 없음")
+            return
+        n_link = abs(link_position)
+        sol_threshold = 60 * n_link
+        current_sol = sol_position if sol_position > 0 else 0
+        print(f"[{symbol} LINK_LONG] LINK={n_link}, SOL롱={current_sol}, 기준={sol_threshold}")
+        if current_sol > sol_threshold:
+            print(f"[{symbol} LINK_LONG] SOL 롱 보유량이 기준 초과")
+            return
+    else:
+        if link_position >= 0:
+            print(f"[{symbol} LINK_SHORT] LINK 숏 포지션 없음")
+            return
+        n_link = abs(link_position)
+        sol_threshold = 60 * n_link
+        current_sol = -sol_position if sol_position < 0 else 0
+        print(f"[{symbol} LINK_SHORT] LINK={n_link}, SOL숏={current_sol}, 기준={sol_threshold}")
+        if current_sol > sol_threshold:
+            print(f"[{symbol} LINK_SHORT] SOL 숏 보유량이 기준 초과")
+            return
+
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    available_usdt = get_available_usdt()
+    margin_to_use = available_usdt * 0.5
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    if amount <= 0:
+        print(f"[{symbol}] 주문 수량이 0 이라서 중단")
+        return
+
+    # -------------------------------------------------
+    # 거래량 폭발 신호 (롱)
+    # -------------------------------------------------
+    if side == 'long':
+        vol_signal = analyze_volume_spike_drop(
+            symbol=symbol,
+            timeframe=timeframe,
+            side='long'
+        )
+
+        print(f"[{symbol} LINK_LONG] VOLUME_SPIKE={vol_signal}")
+
+        if not vol_signal or not vol_signal["signal"]:
+            print(f"[{symbol} LINK_LONG] 거래량 폭발 조건 불만족으로 진입 금지")
+            return
+
+        tp_pct = tp_pct_2 if (tp_pct_2 is not None and vol_signal["range_volatility"] > 0.018) else tp_pct_1
+        tp_price = vol_signal["prev_close"] * (1 + tp_pct)
+        sl_price = vol_signal["prev_close"] * (1 - 0.035) # 3.5% 안에서 열심히 칼춤 춰라 대신 그 이상에선 끊어내야함
+
+        exchange.create_market_buy_order(symbol, amount)
+
+        last_link_long_trade_time = time.time()
+        if timeframe == '5m':
+            last_link_long_5m = time.time()
+
+        if current_sol == 0:
+            place_tp_long(symbol, amount, tp_price)
+            place_sl_long(symbol, sl_price)
+            print(f"[{symbol} LINK_LONG] 거래량 폭발 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
+        else:
+            print(f"[{symbol} LINK_LONG] 거래량 폭발 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
+
+    # -------------------------------------------------
+    # 거래량 폭발 신호 (숏)
+    # -------------------------------------------------
+    else:
+        vol_signal = analyze_volume_spike_drop(
+            symbol=symbol,
+            timeframe=timeframe,
+            side='short'
+        )
+
+        print(f"[{symbol} LINK_SHORT] VOLUME_SPIKE={vol_signal}")
+
+        if not vol_signal or not vol_signal["signal"]:
+            print(f"[{symbol} LINK_SHORT] 거래량 폭발 조건 불만족으로 진입 금지")
+            return
+
+        tp_pct = tp_pct_2 if (tp_pct_2 is not None and vol_signal["range_volatility"] > 0.018) else tp_pct_1
+        tp_price = vol_signal["prev_close"] * (1 - tp_pct)
+        sl_price = vol_signal["prev_close"] * (1 + 0.035)
+
+        exchange.create_market_sell_order(symbol, amount)
+
+        last_link_short_trade_time = time.time()
+        if timeframe == '5m':
+            last_link_short_5m = time.time()
+
+        place_tp_short(symbol, amount, tp_price)
+        place_sl_short(symbol, sl_price)
+        print(f"[{symbol} LINK_SHORT] 거래량 폭발 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+            
 #==========5m봉 급락시 진입 전략========
 
 
@@ -2923,6 +3318,227 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
         }
 
     return None
+
+#4 단타왕 ㄴ자 50ma 매매법
+def trade_50ma_close_strategy(symbol, market_id, timeframe):
+    global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m, last_50ma_close_1h
+    global pending_50ma_close_signal
+
+
+    now = time.time()
+    key = (symbol, timeframe)
+
+
+    # 공통 60 초 쿨다운
+    if now - last_50ma_close_trade_time < 60:
+        print(f"[{symbol} 50MA_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_50ma_close_trade_time:.1f}초 경과)")
+        return
+
+
+    # 5m 전용 쿨다운 (예: 10 분)
+    if timeframe == '5m' and now - last_50ma_close_5m < 600:
+        minutes_ago = (now - last_50ma_close_5m) / 60
+        print(f"[{symbol} 50MA_CLOSE 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (10 분 내 중복매수 금지)")
+        return
+
+
+    # 15m 전용 쿨다운 (예: 120 분)
+    if timeframe == '15m' and now - last_50ma_close_15m < 2700:
+        minutes_ago = (now - last_50ma_close_15m) / 60
+        print(f"[{symbol} 50MA_CLOSE 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
+        return
+
+
+    # 1h 전용 쿨다운 (예: 180 분)
+    if timeframe == '1h' and now - last_50ma_close_1h < 10800:
+        minutes_ago = (now - last_50ma_close_1h) / 60
+        print(f"[{symbol} 50MA_CLOSE 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
+        return
+
+
+    # 마진/레버리지 세팅
+    set_margin_and_leverage(symbol)
+
+
+    # 계좌 잔고 체크
+    current_balance = get_available_usdt()
+    if current_balance < 2500 or current_balance > 12000:
+        print(f"[{symbol} 50MA_CLOSE] 계좌 잔고 {current_balance:.2f} USD (2500~7000 밖이므로 진입 금지)")
+        return
+
+
+    # SOL 기존 롱 포지션 있으면 추가 진입 금지
+    sol_position = get_position_amount('SOL/USDT')
+    if sol_position > 0:
+        print(f"[{symbol} 50MA_CLOSE] SOL 기존 롱 포지션 있음: {sol_position}개")
+        return
+
+
+    # RSI + 이평 데이터
+    # ✅ 21 → 42 로 수정 (MA50, MA200, VWMA100 계산용)
+    df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
+    if df is None or len(df) < 42:
+        print(f"[{symbol} 50MA_CLOSE] 확정봉 데이터 부족 (최소 42 개 필요)")
+        return
+
+
+    # 시그널 분석
+    sig = analyze_50ma_close_strategy(symbol, timeframe, df)
+
+
+    # 1) 진입 신호가 새로 발생했는지 확인
+    if sig and sig["signal"]:
+        if key not in pending_50ma_close_signal:
+            pending_50ma_close_signal[key] = {
+                "signal_info": sig,
+                "signal_time": now,
+                "signal_candle_index": sig["signal_candle_index"],
+                "signal_candle_close": sig["signal_candle_close"],
+                "signal_candle_low": sig["signal_candle_low"],
+            }
+            print(f"[{symbol} 50MA_CLOSE] 진입 신호 발생 → 1% 하락 캔들 대기 시작 (timeframe={timeframe})")
+    else:
+        if key in pending_50ma_close_signal:
+            print(f"[{symbol} 50MA_CLOSE] 진입 신호 소멸 → 대기 상태 초기화 (timeframe={timeframe})")
+            del pending_50ma_close_signal[key]
+        return
+
+
+    # 2) 대기 중인 신호가 있으면, 1% 이상 하락 캔들 확인
+    if key not in pending_50ma_close_signal:
+        return
+
+
+    pending = pending_50ma_close_signal[key]
+    sig_info = pending["signal_info"]
+    signal_candle_index = pending["signal_candle_index"]
+    signal_candle_close = pending["signal_candle_close"]
+
+
+    # 20 봉 → 25 봉으로 증가
+    current_candle_index = len(df) - 1
+    if current_candle_index - signal_candle_index > 25:
+        print(f"[{symbol} 50MA_CLOSE] 신호 발생 후 25 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
+        del pending_50ma_close_signal[key]
+        return
+
+
+    # 3) 타임프레임별 1% 이상 하락 캔들 확인 (close 종가 기준)
+    # 15m: 1%, 5m: 0.85%
+    if timeframe == '15m':
+        drop_threshold = signal_candle_close * 0.99  # 1% 하락
+    elif timeframe == '5m':
+        drop_threshold = signal_candle_close * 0.992  # 0.8% 하락
+    else:
+        drop_threshold = signal_candle_close * 0.99  # 1h 등 기타는 1%
+
+
+    start_idx = signal_candle_index + 1
+    end_idx = len(df) - 1
+
+
+    drop_candle_index = None
+    for i in range(start_idx, end_idx + 1):
+        row = df.iloc[i]
+        close_i = float(row['close'])
+        if close_i <= drop_threshold:
+            drop_candle_index = i
+            break
+
+
+    if drop_candle_index is None:
+        return
+
+
+    # 4) 하락 캔들이 확인되었으면, 그 다음 봉 시가에서 진입
+    entry_candle_index = drop_candle_index + 1
+    if entry_candle_index >= len(df):
+        return
+
+
+    entry_candle = df.iloc[entry_candle_index]
+    entry_price = float(entry_candle['open'])
+
+
+    # 5) 실제 매수 로직
+    current_price = entry_price
+    margin_ratio = 0.4 if timeframe == '15m' else 0.35 if timeframe == '1h' else 0.4
+    margin_to_use = current_balance * margin_ratio    
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+
+    if amount <= 0:
+        print(f"[{symbol} 50MA_CLOSE] 주문 수량이 0 이라서 중단")
+        del pending_50ma_close_signal[key]
+        return
+
+
+    # === 진입가 (entry_price) 기준 TP/SL 재계산 ===
+    # ✅ 5 분봉 1.2%, 15 분봉 1.5% 로 분기
+    if timeframe == '5m':
+        tp_pct = 0.012  # 1.2%
+        sl_price = entry_price * (1 - 0.007)
+        tp_price = entry_price * (1 + tp_pct)
+    elif timeframe == '15m':
+        tp_pct = 0.015  # 1.5%
+        sl_price = entry_price * (1 - 0.007)
+        tp_price = entry_price * (1 + tp_pct)
+    else:
+        # 1h 등 기타는 기존 로직 사용
+        if sig_info.get("tp_pct_base") is not None:
+            ma50 = float(sig_info["ma50"])
+            tp_pct_base = float(sig_info["tp_pct_base"])
+            sl_pct = float(sig_info["sl_pct"])
+
+            sl_price = entry_price * (1 - 0.007)
+
+            tp_price_pct = entry_price * 1.012
+            if ma50 < entry_price * 1.005:
+                tp_price = tp_price_pct
+            else:
+                tp_price = min(ma50, tp_price_pct)
+        else:
+            tp_price = sig_info.get("tp_price")
+            sl_price = sig_info.get("sl_price")
+
+
+    try:
+        order = exchange.create_market_buy_order(
+            symbol=symbol,
+            amount=amount
+        )
+        print(f"[{symbol} 50MA_CLOSE] BUY ORDER RESULT={order}")
+    except Exception as e:
+        print(f"[{symbol} 50MA_CLOSE] 주문 실패: {e}")
+        return
+
+
+    # 쿨다운 시간 갱신
+    last_50ma_close_trade_time = time.time()
+    if timeframe == '5m':
+        last_50ma_close_5m = time.time()
+    elif timeframe == '15m':
+        last_50ma_close_15m = time.time()
+    elif timeframe == '1h':
+        last_50ma_close_1h = time.time()
+
+
+    # TP/SL 설정
+    place_tp_long('SOL/USDT', amount, tp_price)
+    place_sl_long('SOL/USDT', sl_price)
+    print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
+
+
+    print(
+        f"[{symbol} 50MA_CLOSE] 롱 진입 | timeframe={timeframe} | "
+        f"amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}"
+    )
+
+
+    # 진입 완료 후 대기 상태 초기화
+    del pending_50ma_close_signal[key]
+    
 ### 단타왕 ㄴ자 매매 카피전략
 
 ## 1h ma20/25 이평선 전략===== 
@@ -3778,147 +4394,7 @@ def trade_rsi_close_strategy_xrp_sol(
         place_sl_long('SOL/USDT', sl_price)
         print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
 
-def trade_rsi_close_strategy_link(
-    symbol,
-    market_id,
-    timeframe,
-    side,
-    tp_pct_1,
-    tp_pct_2=None,
-    min_volatility=0.003,
-    price_diff_pct=0.001,
-    rsi_raise_pct=0.003,
-    rsi_drop_pct=0.003,
-    min_range_volatility=0.015
-):
-    global last_link_long_trade_time, last_link_short_trade_time
-    global last_link_long_5m, last_link_short_5m
 
-    now = time.time()
-
-    if side == 'long':
-        if now - last_link_long_trade_time < 60:
-            print(f"[{symbol} LINK_LONG] 60 초 쿨다운 중 진입 금지")
-            return
-        if timeframe == '5m' and now - last_link_long_5m < 900:
-            minutes_ago = (now - last_link_long_5m) / 60
-            print(f"[{symbol} LINK_LONG 5m] 최근 {minutes_ago:.1f}분 전에 매수됨 (15 분 내 중복매수 금지)")
-            return
-    else:
-        if now - last_link_short_trade_time < 60:
-            print(f"[{symbol} LINK_SHORT] 60 초 쿨다운 중 진입 금지")
-            return
-        if timeframe == '5m' and now - last_link_short_5m < 900:
-            minutes_ago = (now - last_link_short_5m) / 60
-            print(f"[{symbol} LINK_SHORT 5m] 최근 {minutes_ago:.1f}분 전에 매도됨 (15 분 내 중복매도 금지)")
-            return
-
-    set_margin_and_leverage(symbol)
-    current_balance = get_available_usdt()
-
-    if current_balance < 2500 or current_balance > 12000:
-        print(f"[{symbol}] 계좌 잔고 {current_balance:.2f} USD 범위 밖이므로 진입 금지")
-        return
-
-    link_position = get_position_amount('LINK/USDT')
-    sol_position = get_position_amount('SOL/USDT')
-
-    if side == 'long':
-        if link_position <= 0:
-            print(f"[{symbol} LINK_LONG] LINK 롱 포지션 없음")
-            return
-        n_link = abs(link_position)
-        sol_threshold = 60 * n_link
-        current_sol = sol_position if sol_position > 0 else 0
-        print(f"[{symbol} LINK_LONG] LINK={n_link}, SOL롱={current_sol}, 기준={sol_threshold}")
-        if current_sol > sol_threshold:
-            print(f"[{symbol} LINK_LONG] SOL 롱 보유량이 기준 초과")
-            return
-    else:
-        if link_position >= 0:
-            print(f"[{symbol} LINK_SHORT] LINK 숏 포지션 없음")
-            return
-        n_link = abs(link_position)
-        sol_threshold = 60 * n_link
-        current_sol = -sol_position if sol_position < 0 else 0
-        print(f"[{symbol} LINK_SHORT] LINK={n_link}, SOL숏={current_sol}, 기준={sol_threshold}")
-        if current_sol > sol_threshold:
-            print(f"[{symbol} LINK_SHORT] SOL 숏 보유량이 기준 초과")
-            return
-
-    current_price = float(exchange.fetch_ticker(symbol)['last'])
-    available_usdt = get_available_usdt()
-    margin_to_use = available_usdt * 0.5
-    notional = margin_to_use * LEVERAGE
-    amount = round(notional / current_price, 3)
-
-    if amount <= 0:
-        print(f"[{symbol}] 주문 수량이 0 이라서 중단")
-        return
-
-    # -------------------------------------------------
-    # 거래량 폭발 신호 (롱)
-    # -------------------------------------------------
-    if side == 'long':
-        vol_signal = analyze_volume_spike_drop(
-            symbol=symbol,
-            timeframe=timeframe,
-            side='long'
-        )
-
-        print(f"[{symbol} LINK_LONG] VOLUME_SPIKE={vol_signal}")
-
-        if not vol_signal or not vol_signal["signal"]:
-            print(f"[{symbol} LINK_LONG] 거래량 폭발 조건 불만족으로 진입 금지")
-            return
-
-        tp_pct = tp_pct_2 if (tp_pct_2 is not None and vol_signal["range_volatility"] > 0.018) else tp_pct_1
-        tp_price = vol_signal["prev_close"] * (1 + tp_pct)
-        sl_price = vol_signal["prev_close"] * (1 - 0.0065)
-
-        exchange.create_market_buy_order(symbol, amount)
-
-        last_link_long_trade_time = time.time()
-        if timeframe == '5m':
-            last_link_long_5m = time.time()
-
-        if current_sol == 0:
-            place_tp_long(symbol, amount, tp_price)
-            place_sl_long(symbol, sl_price)
-            print(f"[{symbol} LINK_LONG] 거래량 폭발 롱 진입 (첫 매매, TP 걸림) | amount={amount} | price={current_price} | tp={tp_price} | tp_pct={tp_pct}")
-        else:
-            print(f"[{symbol} LINK_LONG] 거래량 폭발 롱 진입 (추가 매수, TP 없음) | amount={amount} | price={current_price}")
-
-    # -------------------------------------------------
-    # 거래량 폭발 신호 (숏)
-    # -------------------------------------------------
-    else:
-        vol_signal = analyze_volume_spike_drop(
-            symbol=symbol,
-            timeframe=timeframe,
-            side='short'
-        )
-
-        print(f"[{symbol} LINK_SHORT] VOLUME_SPIKE={vol_signal}")
-
-        if not vol_signal or not vol_signal["signal"]:
-            print(f"[{symbol} LINK_SHORT] 거래량 폭발 조건 불만족으로 진입 금지")
-            return
-
-        tp_pct = tp_pct_2 if (tp_pct_2 is not None and vol_signal["range_volatility"] > 0.018) else tp_pct_1
-        tp_price = vol_signal["prev_close"] * (1 - tp_pct)
-        sl_price = vol_signal["prev_close"] * (1 + 0.0065)
-
-        exchange.create_market_sell_order(symbol, amount)
-
-        last_link_short_trade_time = time.time()
-        if timeframe == '5m':
-            last_link_short_5m = time.time()
-
-        place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} LINK_SHORT] 거래량 폭발 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
-        
 
 # eth 전략 ### 이평선 전략 추가 기준 전용 - eth 추매 조건은 삭제. 함수 이름 변경 필요
 def trade_rsi_close_strategy_eth_long_new(
@@ -4031,225 +4507,7 @@ def trade_rsi_close_strategy_eth_long_new(
 
     print(f"[{symbol} ETH_LONG_NEW] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
 
-# 단타왕 ㄴ자 50ma 매매법
-def trade_50ma_close_strategy(symbol, market_id, timeframe):
-    global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m, last_50ma_close_1h
-    global pending_50ma_close_signal
 
-
-    now = time.time()
-    key = (symbol, timeframe)
-
-
-    # 공통 60 초 쿨다운
-    if now - last_50ma_close_trade_time < 60:
-        print(f"[{symbol} 50MA_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_50ma_close_trade_time:.1f}초 경과)")
-        return
-
-
-    # 5m 전용 쿨다운 (예: 10 분)
-    if timeframe == '5m' and now - last_50ma_close_5m < 600:
-        minutes_ago = (now - last_50ma_close_5m) / 60
-        print(f"[{symbol} 50MA_CLOSE 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (10 분 내 중복매수 금지)")
-        return
-
-
-    # 15m 전용 쿨다운 (예: 120 분)
-    if timeframe == '15m' and now - last_50ma_close_15m < 2700:
-        minutes_ago = (now - last_50ma_close_15m) / 60
-        print(f"[{symbol} 50MA_CLOSE 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
-        return
-
-
-    # 1h 전용 쿨다운 (예: 180 분)
-    if timeframe == '1h' and now - last_50ma_close_1h < 10800:
-        minutes_ago = (now - last_50ma_close_1h) / 60
-        print(f"[{symbol} 50MA_CLOSE 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
-        return
-
-
-    # 마진/레버리지 세팅
-    set_margin_and_leverage(symbol)
-
-
-    # 계좌 잔고 체크
-    current_balance = get_available_usdt()
-    if current_balance < 2500 or current_balance > 12000:
-        print(f"[{symbol} 50MA_CLOSE] 계좌 잔고 {current_balance:.2f} USD (2500~7000 밖이므로 진입 금지)")
-        return
-
-
-    # SOL 기존 롱 포지션 있으면 추가 진입 금지
-    sol_position = get_position_amount('SOL/USDT')
-    if sol_position > 0:
-        print(f"[{symbol} 50MA_CLOSE] SOL 기존 롱 포지션 있음: {sol_position}개")
-        return
-
-
-    # RSI + 이평 데이터
-    # ✅ 21 → 42 로 수정 (MA50, MA200, VWMA100 계산용)
-    df = get_confirmed_candles_with_rsi_new(symbol, timeframe)
-    if df is None or len(df) < 42:
-        print(f"[{symbol} 50MA_CLOSE] 확정봉 데이터 부족 (최소 42 개 필요)")
-        return
-
-
-    # 시그널 분석
-    sig = analyze_50ma_close_strategy(symbol, timeframe, df)
-
-
-    # 1) 진입 신호가 새로 발생했는지 확인
-    if sig and sig["signal"]:
-        if key not in pending_50ma_close_signal:
-            pending_50ma_close_signal[key] = {
-                "signal_info": sig,
-                "signal_time": now,
-                "signal_candle_index": sig["signal_candle_index"],
-                "signal_candle_close": sig["signal_candle_close"],
-                "signal_candle_low": sig["signal_candle_low"],
-            }
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 발생 → 1% 하락 캔들 대기 시작 (timeframe={timeframe})")
-    else:
-        if key in pending_50ma_close_signal:
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 소멸 → 대기 상태 초기화 (timeframe={timeframe})")
-            del pending_50ma_close_signal[key]
-        return
-
-
-    # 2) 대기 중인 신호가 있으면, 1% 이상 하락 캔들 확인
-    if key not in pending_50ma_close_signal:
-        return
-
-
-    pending = pending_50ma_close_signal[key]
-    sig_info = pending["signal_info"]
-    signal_candle_index = pending["signal_candle_index"]
-    signal_candle_close = pending["signal_candle_close"]
-
-
-    # 20 봉 → 25 봉으로 증가
-    current_candle_index = len(df) - 1
-    if current_candle_index - signal_candle_index > 25:
-        print(f"[{symbol} 50MA_CLOSE] 신호 발생 후 25 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
-        del pending_50ma_close_signal[key]
-        return
-
-
-    # 3) 타임프레임별 1% 이상 하락 캔들 확인 (close 종가 기준)
-    # 15m: 1%, 5m: 0.85%
-    if timeframe == '15m':
-        drop_threshold = signal_candle_close * 0.99  # 1% 하락
-    elif timeframe == '5m':
-        drop_threshold = signal_candle_close * 0.992  # 0.8% 하락
-    else:
-        drop_threshold = signal_candle_close * 0.99  # 1h 등 기타는 1%
-
-
-    start_idx = signal_candle_index + 1
-    end_idx = len(df) - 1
-
-
-    drop_candle_index = None
-    for i in range(start_idx, end_idx + 1):
-        row = df.iloc[i]
-        close_i = float(row['close'])
-        if close_i <= drop_threshold:
-            drop_candle_index = i
-            break
-
-
-    if drop_candle_index is None:
-        return
-
-
-    # 4) 하락 캔들이 확인되었으면, 그 다음 봉 시가에서 진입
-    entry_candle_index = drop_candle_index + 1
-    if entry_candle_index >= len(df):
-        return
-
-
-    entry_candle = df.iloc[entry_candle_index]
-    entry_price = float(entry_candle['open'])
-
-
-    # 5) 실제 매수 로직
-    current_price = entry_price
-    margin_ratio = 0.4 if timeframe == '15m' else 0.35 if timeframe == '1h' else 0.4
-    margin_to_use = current_balance * margin_ratio    
-    notional = margin_to_use * LEVERAGE
-    amount = round(notional / current_price, 3)
-
-
-    if amount <= 0:
-        print(f"[{symbol} 50MA_CLOSE] 주문 수량이 0 이라서 중단")
-        del pending_50ma_close_signal[key]
-        return
-
-
-    # === 진입가 (entry_price) 기준 TP/SL 재계산 ===
-    # ✅ 5 분봉 1.2%, 15 분봉 1.5% 로 분기
-    if timeframe == '5m':
-        tp_pct = 0.012  # 1.2%
-        sl_price = entry_price * (1 - 0.007)
-        tp_price = entry_price * (1 + tp_pct)
-    elif timeframe == '15m':
-        tp_pct = 0.015  # 1.5%
-        sl_price = entry_price * (1 - 0.007)
-        tp_price = entry_price * (1 + tp_pct)
-    else:
-        # 1h 등 기타는 기존 로직 사용
-        if sig_info.get("tp_pct_base") is not None:
-            ma50 = float(sig_info["ma50"])
-            tp_pct_base = float(sig_info["tp_pct_base"])
-            sl_pct = float(sig_info["sl_pct"])
-
-            sl_price = entry_price * (1 - 0.007)
-
-            tp_price_pct = entry_price * 1.012
-            if ma50 < entry_price * 1.005:
-                tp_price = tp_price_pct
-            else:
-                tp_price = min(ma50, tp_price_pct)
-        else:
-            tp_price = sig_info.get("tp_price")
-            sl_price = sig_info.get("sl_price")
-
-
-    try:
-        order = exchange.create_market_buy_order(
-            symbol=symbol,
-            amount=amount
-        )
-        print(f"[{symbol} 50MA_CLOSE] BUY ORDER RESULT={order}")
-    except Exception as e:
-        print(f"[{symbol} 50MA_CLOSE] 주문 실패: {e}")
-        return
-
-
-    # 쿨다운 시간 갱신
-    last_50ma_close_trade_time = time.time()
-    if timeframe == '5m':
-        last_50ma_close_5m = time.time()
-    elif timeframe == '15m':
-        last_50ma_close_15m = time.time()
-    elif timeframe == '1h':
-        last_50ma_close_1h = time.time()
-
-
-    # TP/SL 설정
-    place_tp_long('SOL/USDT', amount, tp_price)
-    place_sl_long('SOL/USDT', sl_price)
-    print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
-
-
-    print(
-        f"[{symbol} 50MA_CLOSE] 롱 진입 | timeframe={timeframe} | "
-        f"amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}"
-    )
-
-
-    # 진입 완료 후 대기 상태 초기화
-    del pending_50ma_close_signal[key]
 
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
