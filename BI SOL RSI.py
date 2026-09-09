@@ -4051,8 +4051,8 @@ def trade_rsi_close_strategy(
     """
     close 기준 RSI 다이버전스 전략 실행 함수.
 
-    - 기존 15봉 조건을 유지한다.
-    - 추가로 30봉 조건도 함께 본다.
+    - 기존 15 봉 조건을 유지한다.
+    - 추가로 30 봉 조건도 함께 본다.
     - 둘 중 하나라도 만족하면 진입한다.
     """
 
@@ -4172,23 +4172,21 @@ def trade_rsi_close_strategy(
 
     sl_pct = 0.006
 
-    # 롱 처리
+    # 롱 처리 # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
     if bull_close and bull_close["signal"]:
-        if yesterday_above_both and today_below_either:
-            print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
-            return
+        # ✅ 롱 진입 금지 조건들 주석 처리
+        # if yesterday_above_both and today_below_either:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
+        #     return
 
-        if trend["down_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
-            return
+        # if trend["down_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
+        #     return
 
-        if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
-            return
+        # if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
+        #     return
 
-        # tp_pct = tp_long_pct_2 if bull_close["range_volatility"] > 0.02 else tp_long_pct
-        # tp_price = bull_close["prev_close"] * (1 + tp_pct)
-        # sl_price = bull_close["prev_close"] * (1 - sl_pct)
 
 
         if bull_close["range_volatility"] > 0.02:
@@ -4200,8 +4198,6 @@ def trade_rsi_close_strategy(
 
         tp_price = bull_close["prev_close"] * (1 + tp_pct)
         sl_price = bull_close["prev_close"] * (1 - sl_pct)
-
-
 
         exchange.create_market_buy_order(symbol, amount)
 
@@ -4222,21 +4218,22 @@ def trade_rsi_close_strategy(
         print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
-    # 숏 처리
+    # 숏 처리  # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
     if bear_close and bear_close["signal"]:
-        if yesterday_below_both and today_above_both:
-            print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 전환으로 숏 진입 금지")
-            return
+        # ✅ 숏 진입 금지 조건들 주석 처리
+        # if yesterday_below_both and today_above_both:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 전환으로 숏 진입 금지")
+        #     return
 
-        if trend["up_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
-            return
+        # if trend["up_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
+        #     return
 
-        if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
-            return
+        # if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
+        #     return
 
-        # 30봉 신호면 더 넓은 TP를 사용
+        # 30 봉 신호면 더 넓은 TP 를 사용
         tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
         tp_price = bear_close["prev_close"] * (1 - tp_pct)
         sl_price = bear_close["prev_close"] * (1 + sl_pct)
@@ -4255,7 +4252,7 @@ def trade_rsi_close_strategy(
 
         place_tp_short(symbol, amount, tp_price)
         place_sl_short(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | mode={bear_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
         return
 
     print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
