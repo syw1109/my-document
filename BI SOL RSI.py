@@ -1679,26 +1679,35 @@ def trade_rsi_close_strategy_link(
 
 # def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003):
     
-def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003, price_diff_pct=0.003):
-        
+def analyze_bullish_divergence(
+    symbol,
+    timeframe,
+    rsi_raise_pct=0.02,
+    min_volatility=0.003,
+    price_diff_pct=0.003
+):
     """
     상승 다이버전스 조건 판단:
+
     - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
-    - 그 이전 15개 봉(iloc[-16:-1])의 lowest low보다 직전봉 close가 더 낮아야 함
-    - 그 이전 15개 봉의 lowest rsi보다 직전봉 rsi가 지정 비율 이상 높아야 함
+    - 그 이전 기준 구간의 lowest low보다 직전봉 close가 더 낮아야 함
+    - 그 이전 기준 구간의 음봉 중 lowest RSI보다 직전봉 RSI가
+      지정 비율 이상 높아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
+    - 직전봉은 음봉이어야 함
     """
+
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 17:
+    if df is None or len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]       # 직전 확정봉
-    base_15 = df.iloc[-16:-2]  # 3~16, 1,2 번 봉 제외
-    base_16 = df.iloc[-17:-1]  # 2~16, 변동성 계산 구간 2 번 봉 포함
+    base_15 = df.iloc[-16:-2]       # 3~16, 1·2번 봉 제외
+    base_16 = df.iloc[-17:-1]       # 2~16, 변동성 계산 구간
 
     lowest_low = base_15['low'].min()
-    # lowest_rsi = base_15['rsi'].min()
+
     # -------------------------------------------------
     # base_15 중 음봉만 필터링
     # 음봉 조건: open > close
@@ -1714,100 +1723,209 @@ def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volati
     # 음봉들 중 최저 RSI
     lowest_rsi = bearish_candles_15['rsi'].min()
 
-    
-    # ✅ 추가
+    # -------------------------------------------------
+    # 변동성 계산
+    # -------------------------------------------------
     range_high = base_16['close'].max()
-    range_low  = base_16['close'].min()
-    range_volatility = (range_high - range_low) / range_high    
+    range_low = base_16['close'].min()
 
-  
+    if range_high == 0:
+        return None
+
+    range_volatility = (
+        (range_high - range_low) / range_high
+    )
+
     # -------------------------------------------------
     # 조건
-    # -------------------------------------------------  
-    cond_price      = prev_candle['close'] < lowest_low* (1 - price_diff_pct) 
-    cond_rsi        = prev_candle['rsi'] >= lowest_rsi * (1 + rsi_raise_pct)
-    cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+    # -------------------------------------------------
 
-    signal = cond_price and cond_rsi and cond_volatility
+    # 조건 1: 직전봉 종가가 기준 최저 low보다 낮음
+    cond_price = (
+        prev_candle['close']
+        < lowest_low * (1 - price_diff_pct)
+    )
+
+    # 조건 2: 직전봉 RSI가 기준 최저 RSI보다 지정 비율 이상 높음
+    cond_rsi = (
+        prev_candle['rsi']
+        >= lowest_rsi * (1 + rsi_raise_pct)
+    )
+
+    # 조건 3: 직전봉 몸통 변동성
+    cond_volatility = (
+        abs(prev_candle['close'] - prev_candle['open'])
+        / prev_candle['open']
+        >= min_volatility
+    )
+
+    # 조건 4: 직전봉이 음봉
+    cond_bearish_candle = (
+        prev_candle['open'] > prev_candle['close']
+    )
+
+    # 모든 조건 만족 시 상승 다이버전스
+    signal = (
+        cond_price
+        and cond_rsi
+        and cond_volatility
+        and cond_bearish_candle
+    )
 
     return {
         "signal": signal,
         "side": "long",
-        # 기준값        
+
+        # 기준값
         "lowest_low": float(lowest_low),
         "lowest_rsi": float(lowest_rsi),
-        # "bearish_candle_count": int(len(bearish_candles_15)), 로그에서 기준 구간에 양봉이 몇 개 있었는지 확인하고 싶다면 유지
-        # 직전봉 정보                
+
+        # 기준 구간 정보
+        "bearish_candle_count": int(len(bearish_candles_15)),
+
+        # 직전봉 정보
         "prev_open": float(prev_candle['open']),
         "prev_close": float(prev_candle['close']),
         "prev_rsi": float(prev_candle['rsi']),
-        # 조건 결과        
+
+        # 조건 결과
         "price_condition": cond_price,
         "rsi_condition": cond_rsi,
         "volatility_condition": cond_volatility,
-        "range_volatility": float(range_volatility),  # ✅ 추가        
+        "bearish_candle_condition": cond_bearish_candle,
+
+        # 변동성
+        "range_volatility": float(range_volatility),
+
+        # 기본 TP 기준
         "tp_price": float(prev_candle['close'])
     }
 
 
-def analyze_bearish_divergence(symbol, timeframe, rsi_drop_pct=0.02, min_volatility=0.003, price_diff_pct=0.003):
+def analyze_bearish_divergence(
+    symbol,
+    timeframe,
+    rsi_drop_pct=0.02,
+    min_volatility=0.003,
+    price_diff_pct=0.003
+):
     """
     하락 다이버전스 조건 판단:
+
     - 확정봉 기준 직전봉(iloc[-1])을 판단봉으로 사용
-    - 그 이전 15개 봉(iloc[-16:-1])의 highest high보다 직전봉 close가 더 높아야 함
-    - 그 이전 15개 봉의 highest rsi보다 직전봉 rsi가 지정 비율 이상 낮아야 함
+    - 그 이전 기준 구간의 highest high보다 직전봉 close가 더 높아야 함
+    - 그 이전 기준 구간의 양봉 중 highest RSI보다 직전봉 RSI가
+      지정 비율 이상 낮아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
+    - 직전봉은 양봉이어야 함
     """
+
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    if len(df) < 17:
+    if df is None or len(df) < 17:
         return None
 
     prev_candle = df.iloc[-1]
-    base_15 = df.iloc[-12:-2]  # 3~11, 2 번 봉 제외, 숏은 10개봉만 본다
-    base_16 = df.iloc[-17:-1]  # 2~17, 2 번 봉 포함. 16봉 변동성 시가도 포함하기위한  보는 목적
 
+    # 3~11, 2번 봉 제외
+    # 기존 코드의 10개 봉 기준 유지
+    base_15 = df.iloc[-12:-2]
+
+    # 2~17, 변동성 계산 구간
+    base_16 = df.iloc[-17:-1]
 
     highest_high = base_15['high'].max()
-    # highest_rsi  = base_15['rsi'].max()
+
     # -------------------------------------------------
     # base_15 중 양봉만 필터링
-    # 양봉: open < close
+    # 양봉 조건: open < close
     # -------------------------------------------------
     bullish_candles_15 = base_15[
         base_15['open'] < base_15['close']
     ]
 
-    # 양봉이 하나도 없으면 최고 RSI 계산 불가
+    # 양봉이 하나도 없으면 RSI 비교 불가
     if bullish_candles_15.empty:
         return None
 
-    # 양봉들 중 가장 높은 RSI
-    highest_rsi = bullish_candles_15['rsi'].max()    
-    
-    # ✅ 추가
+    # 양봉들 중 최고 RSI
+    highest_rsi = bullish_candles_15['rsi'].max()
+
+    # -------------------------------------------------
+    # 변동성 계산
+    # -------------------------------------------------
     range_high = base_16['close'].max()
-    range_low  = base_16['close'].min()
-    range_volatility = (range_high - range_low) / range_high    
+    range_low = base_16['close'].min()
 
-    cond_price      = prev_candle['close'] > highest_high * (1 + price_diff_pct)
-    cond_rsi        = prev_candle['rsi'] <= highest_rsi * (1 - rsi_drop_pct)
-    cond_volatility = abs(prev_candle['close'] - prev_candle['open']) / prev_candle['open'] >= min_volatility
+    if range_high == 0:
+        return None
 
-    signal = cond_price and cond_rsi and cond_volatility
+    range_volatility = (
+        (range_high - range_low) / range_high
+    )
+
+    # -------------------------------------------------
+    # 조건
+    # -------------------------------------------------
+
+    # 조건 1: 직전봉 종가가 기준 최고 high보다 높음
+    cond_price = (
+        prev_candle['close']
+        > highest_high * (1 + price_diff_pct)
+    )
+
+    # 조건 2: 직전봉 RSI가 기준 최고 RSI보다 지정 비율 이상 낮음
+    cond_rsi = (
+        prev_candle['rsi']
+        <= highest_rsi * (1 - rsi_drop_pct)
+    )
+
+    # 조건 3: 직전봉 몸통 변동성
+    cond_volatility = (
+        abs(prev_candle['close'] - prev_candle['open'])
+        / prev_candle['open']
+        >= min_volatility
+    )
+
+    # 조건 4: 직전봉이 양봉
+    cond_bullish_candle = (
+        prev_candle['open'] < prev_candle['close']
+    )
+
+    # 모든 조건 만족 시 하락 다이버전스
+    signal = (
+        cond_price
+        and cond_rsi
+        and cond_volatility
+        and cond_bullish_candle
+    )
 
     return {
         "signal": signal,
         "side": "short",
+
+        # 기준값
         "highest_high": float(highest_high),
         "highest_rsi": float(highest_rsi),
+
+        # 기준 구간 정보
+        "bullish_candle_count": int(len(bullish_candles_15)),
+
+        # 직전봉 정보
         "prev_open": float(prev_candle['open']),
         "prev_close": float(prev_candle['close']),
         "prev_rsi": float(prev_candle['rsi']),
+
+        # 조건 결과
         "price_condition": cond_price,
         "rsi_condition": cond_rsi,
         "volatility_condition": cond_volatility,
-        "range_volatility": float(range_volatility),  # ✅ 추가
+        "bullish_candle_condition": cond_bullish_candle,
+
+        # 변동성
+        "range_volatility": float(range_volatility),
+
+        # 기본 TP 기준
         "tp_price": float(prev_candle['close'])
     }
 
@@ -2070,8 +2188,9 @@ def analyze_bullish_divergence_close(
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
 
-    # 30 봉 기준 구간
-    base_30 = df.iloc[-31:-16]
+    # 30 봉 기준 구간 직전봉을 제외한 최근 기준 구간
+    base_30 = df.iloc[-31:-2]
+    # range voltality 변동성 계산용 구간
     base_31 = df.iloc[-32:-1]
 
     # 공통 조건: 직전봉 음봉
@@ -3238,7 +3357,7 @@ def trade_rsi_close_strategy_eth_long_new(
     
 ### 이평선 전략 추가
 
-### 단타왕 ㄴ자 매매 카피전략
+#4 ## 단타왕 ㄴ자 매매 카피전략
 # 공통 조건 SOL 보유시 동작 안함.
 
 # 1. 5분봉 전용 조건
@@ -3673,8 +3792,8 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
     # 20 봉 → 25 봉으로 증가
     current_candle_index = len(df) - 1
-    if current_candle_index - signal_candle_index > 25:
-        print(f"[{symbol} 50MA_CLOSE] 신호 발생 후 25 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
+    if current_candle_index - signal_candle_index > 30:
+        print(f"[{symbol} 50MA_CLOSE] 신호 발생 후 30 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
         del pending_50ma_close_signal[key]
         return
 
@@ -4959,21 +5078,21 @@ while True:
 
         time.sleep(2) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
 
-        # SOL/USDT 5m VOLUME_BREAKOUT
-        if not has_position(MARKET_ID_SOL):
-            trade_volume_breakout_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='5m',
-                min_volume_abs=100_000,
-                volume_pct=0.71,
-                bullish_vol_threshold=650_000,
-                bullish_candle_pct=0.0065,
-                entry_drop_pct_bullish=0.0045,
-                entry_drop_pct_bearish=0.008,
-                entry_rise_pct_bullish=0.0045,
-                entry_rise_pct_bearish=0.008
-            )
+        # SOL/USDT 5m VOLUME_BREAKOUT - 260911 코드가 동작을 안하고 일단 5분봉이라서 노이즈가 많아서 홀드 시킴
+        # if not has_position(MARKET_ID_SOL):
+        #     trade_volume_breakout_strategy(
+        #         symbol=SOL_SYMBOL,
+        #         market_id=MARKET_ID_SOL,
+        #         timeframe='5m',
+        #         min_volume_abs=100_000,
+        #         volume_pct=0.71,
+        #         bullish_vol_threshold=650_000,
+        #         bullish_candle_pct=0.0065,
+        #         entry_drop_pct_bullish=0.0045,
+        #         entry_drop_pct_bearish=0.008,
+        #         entry_rise_pct_bullish=0.0045,
+        #         entry_rise_pct_bearish=0.008
+        #     )
         
         # SOL/USDT 15m VOLUME_BREAKOUT #(필요시)
         # if not has_position(MARKET_ID_SOL):
@@ -5006,7 +5125,7 @@ while True:
         #         entry_rise_pct_bullish=0.0045,
         #         entry_rise_pct_bearish=0.008
         #     ) 
-        time.sleep(2)
+        # time.sleep(2)
 
 
         # 1시간봉 전략        
