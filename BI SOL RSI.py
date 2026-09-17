@@ -477,6 +477,11 @@ def get_confirmed_candles_with_rsi(
 
     반환 DataFrame 에는 기존 OHLCV + RSI 가 포함되며,
     필요시 volume 기반 지표 확장을 위해 volume 컬럼도 유지됩니다.
+
+    추가:
+    - ma20: 볼린저 밴드 중심선
+    - bb_upper: 20봉 이동평균 + 2표준편차
+    - bb_lower: 20봉 이동평균 - 2표준편차
     """
 
     tf_ms = {
@@ -537,6 +542,7 @@ def get_confirmed_candles_with_rsi(
         avg_gain.iloc[i] = (
             avg_gain.iloc[i - 1] * (rsi_length - 1) + gain.iloc[i]
         ) / rsi_length
+
         avg_loss.iloc[i] = (
             avg_loss.iloc[i - 1] * (rsi_length - 1) + loss.iloc[i]
         ) / rsi_length
@@ -547,7 +553,41 @@ def get_confirmed_candles_with_rsi(
     # 필요시 volume 기반 지표 추가를 위해 volume 컬럼 유지
     # (예: volume rolling average, OBV 등 확장 가능)
 
-    return df.dropna(subset=['rsi']).reset_index(drop=True)
+    # =================================================
+    # 볼린저 밴드 계산
+    # =================================================
+    # 중심선: 20봉 단순이동평균
+    # 표준편차: 최근 20개 종가 기준
+    # 상단 밴드: 중심선 + 2표준편차
+    # 하단 밴드: 중심선 - 2표준편차
+    bb_length = 20
+    bb_std_multiplier = 2.0
+
+    df['bb_middle'] = (
+        df['close'].rolling(window=bb_length).mean()
+    )
+
+    df['bb_std'] = (
+        df['close'].rolling(window=bb_length).std(ddof=0)
+    )
+
+    df['bb_upper'] = (
+        df['bb_middle']
+        + bb_std_multiplier * df['bb_std']
+    )
+
+    df['bb_lower'] = (
+        df['bb_middle']
+        - bb_std_multiplier * df['bb_std']
+    )
+
+    # 기존 전략 호환을 위해 ma20도 유지
+    df['ma20'] = df['bb_middle']
+
+    # RSI와 볼린저 밴드 계산에 필요한 NaN 제거
+    return df.dropna(
+        subset=['rsi', 'bb_middle', 'bb_upper', 'bb_lower']
+    ).reset_index(drop=True)
 # ===================== RSI 다이버전스 판단 =====================
 
 #12============거래량 장대봉 추세 전략=======
@@ -1695,6 +1735,12 @@ def analyze_bullish_divergence(
       지정 비율 이상 높아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
     - 직전봉은 음봉이어야 함
+
+    볼린저 밴드 급변동 제한:
+    - 직전 5개 확정봉 중 음봉의 종가가 당시 bb_lower보다 낮고
+    - 몸통 변동성이 기준 이상이면 롱 진입 금지
+    - 15m: 1.5% 이상
+    - 1h: 2% 이상
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
@@ -1736,6 +1782,59 @@ def analyze_bullish_divergence(
         (range_high - range_low) / range_high
     )
 
+    # =================================================
+    # 볼린저 밴드 급변동 제한
+    # =================================================
+    # 최근 5개 확정봉
+    last_5_candles = df.iloc[-5:]
+
+    # 타임프레임별 강한 하단 이탈 변동성 기준
+    if timeframe == '15m':
+        bb_strong_volatility_threshold = 0.015
+    elif timeframe == '1h':
+        bb_strong_volatility_threshold = 0.02
+    else:
+        bb_strong_volatility_threshold = 0.015
+
+    # 최근 5개 중 음봉만 확인
+    bearish_last_5 = last_5_candles[
+        last_5_candles['open'] > last_5_candles['close']
+    ].copy()
+
+    if not bearish_last_5.empty:
+        # 각 캔들의 몸통 변동성
+        bearish_last_5['body_volatility'] = (
+            abs(
+                bearish_last_5['close']
+                - bearish_last_5['open']
+            )
+            / bearish_last_5['open']
+        )
+
+        # 각 캔들의 종가가 당시 볼린저 하단보다 낮은지 확인
+        bearish_last_5['below_bb_lower'] = (
+            bearish_last_5['close']
+            < bearish_last_5['bb_lower']
+        )
+
+        # 볼린저 하단 이탈 + 큰 음봉
+        strong_bb_lower_break = (
+            bearish_last_5['below_bb_lower']
+            & (
+                bearish_last_5['body_volatility']
+                >= bb_strong_volatility_threshold
+            )
+        )
+
+        cond_strong_bb_lower_break = bool(
+            strong_bb_lower_break.any()
+        )
+    else:
+        cond_strong_bb_lower_break = False
+
+    # 강한 하단 이탈이 있으면 롱 진입 금지
+    cond_bollinger_filter = not cond_strong_bb_lower_break
+
     # -------------------------------------------------
     # 조건
     # -------------------------------------------------
@@ -1754,7 +1853,10 @@ def analyze_bullish_divergence(
 
     # 조건 3: 직전봉 몸통 변동성
     cond_volatility = (
-        abs(prev_candle['close'] - prev_candle['open'])
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
         / prev_candle['open']
         >= min_volatility
     )
@@ -1770,6 +1872,7 @@ def analyze_bullish_divergence(
         and cond_rsi
         and cond_volatility
         and cond_bearish_candle
+        and cond_bollinger_filter
     )
 
     return {
@@ -1782,6 +1885,13 @@ def analyze_bullish_divergence(
 
         # 기준 구간 정보
         "bearish_candle_count": int(len(bearish_candles_15)),
+
+        # 볼린저 밴드 필터 정보
+        "bollinger_filter": cond_bollinger_filter,
+        "strong_bb_lower_break": cond_strong_bb_lower_break,
+        "bb_strong_volatility_threshold": (
+            float(bb_strong_volatility_threshold)
+        ),
 
         # 직전봉 정보
         "prev_open": float(prev_candle['open']),
@@ -1818,6 +1928,12 @@ def analyze_bearish_divergence(
       지정 비율 이상 낮아야 함
     - 직전봉 open 대비 close 변동폭이 최소 기준 이상이어야 함
     - 직전봉은 양봉이어야 함
+
+    볼린저 밴드 급변동 제한:
+    - 직전 5개 확정봉 중 양봉의 종가가 당시 bb_upper보다 높고
+    - 몸통 변동성이 기준 이상이면 숏 진입 금지
+    - 15m: 1.5% 이상
+    - 1h: 2% 이상
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
@@ -1828,8 +1944,8 @@ def analyze_bearish_divergence(
     prev_candle = df.iloc[-1]
 
     # 3~11, 2번 봉 제외
-    # 기존 코드의 10개 봉 기준 유지
-    base_15 = df.iloc[-12:-2]
+    # 기존 코드의 7개 봉 기준 유지
+    base_15 = df.iloc[-9:-2]
 
     # 2~17, 변동성 계산 구간
     base_16 = df.iloc[-17:-1]
@@ -1864,6 +1980,59 @@ def analyze_bearish_divergence(
         (range_high - range_low) / range_high
     )
 
+    # =================================================
+    # 볼린저 밴드 급변동 제한
+    # =================================================
+    # 최근 5개 확정봉
+    last_5_candles = df.iloc[-5:]
+
+    # 타임프레임별 강한 상단 이탈 변동성 기준
+    if timeframe == '15m':
+        bb_strong_volatility_threshold = 0.015
+    elif timeframe == '1h':
+        bb_strong_volatility_threshold = 0.02
+    else:
+        bb_strong_volatility_threshold = 0.015
+
+    # 최근 5개 중 양봉만 확인
+    bullish_last_5 = last_5_candles[
+        last_5_candles['open'] < last_5_candles['close']
+    ].copy()
+
+    if not bullish_last_5.empty:
+        # 각 캔들의 몸통 변동성
+        bullish_last_5['body_volatility'] = (
+            abs(
+                bullish_last_5['close']
+                - bullish_last_5['open']
+            )
+            / bullish_last_5['open']
+        )
+
+        # 각 캔들의 종가가 당시 볼린저 상단보다 높은지 확인
+        bullish_last_5['above_bb_upper'] = (
+            bullish_last_5['close']
+            > bullish_last_5['bb_upper']
+        )
+
+        # 볼린저 상단 이탈 + 큰 양봉
+        strong_bb_upper_break = (
+            bullish_last_5['above_bb_upper']
+            & (
+                bullish_last_5['body_volatility']
+                >= bb_strong_volatility_threshold
+            )
+        )
+
+        cond_strong_bb_upper_break = bool(
+            strong_bb_upper_break.any()
+        )
+    else:
+        cond_strong_bb_upper_break = False
+
+    # 강한 상단 이탈이 있으면 숏 진입 금지
+    cond_bollinger_filter = not cond_strong_bb_upper_break
+
     # -------------------------------------------------
     # 조건
     # -------------------------------------------------
@@ -1882,7 +2051,10 @@ def analyze_bearish_divergence(
 
     # 조건 3: 직전봉 몸통 변동성
     cond_volatility = (
-        abs(prev_candle['close'] - prev_candle['open'])
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
         / prev_candle['open']
         >= min_volatility
     )
@@ -1898,6 +2070,7 @@ def analyze_bearish_divergence(
         and cond_rsi
         and cond_volatility
         and cond_bullish_candle
+        and cond_bollinger_filter
     )
 
     return {
@@ -1910,6 +2083,13 @@ def analyze_bearish_divergence(
 
         # 기준 구간 정보
         "bullish_candle_count": int(len(bullish_candles_15)),
+
+        # 볼린저 밴드 필터 정보
+        "bollinger_filter": cond_bollinger_filter,
+        "strong_bb_upper_break": cond_strong_bb_upper_break,
+        "bb_strong_volatility_threshold": (
+            float(bb_strong_volatility_threshold)
+        ),
 
         # 직전봉 정보
         "prev_open": float(prev_candle['open']),
@@ -1944,19 +2124,19 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     # 쿨다운 체크 (60 초 이내 진입 금지)
     # → sleep(2) 이 실패해도 이 줄에서 2 차로 막힘
     # ──────────────────────────────────────────────────────────────
-    if time.time() - last_sol_trade_time < 60:
+    if time.time() - last_sol_trade_time < 3600:  # 이건 15m, 1h 모두 기준으로 막아줌 공통 3600초 쿨다운
         print(f"[{symbol} {timeframe} RSI] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {time.time() - last_sol_trade_time:.1f}초 경과)")
         return
     
     # ──────────────────────────────────────────────────────────────
     # timeframe 별 쿨다운 체크 (1 시간봉=60 분, 15 분봉=15 분)
     # ──────────────────────────────────────────────────────────────
-    if timeframe == '1h' and time.time() - last_sol_buy_time_1h < 7200:
+    if timeframe == '1h' and time.time() - last_sol_buy_time_1h < 10800:
         minutes_ago = (time.time() - last_sol_buy_time_1h) / 60
         print(f"[{symbol} {timeframe} RSI] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (60 분 내 중복매수 금지)")
         return
     
-    if timeframe == '15m' and time.time() - last_sol_buy_time_15m < 1800:
+    if timeframe == '15m' and time.time() - last_sol_buy_time_15m < 3600:
         minutes_ago = (time.time() - last_sol_buy_time_15m) / 60
         print(f"[{symbol} {timeframe} RSI] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (15 분 내 중복매수 금지)")
         return
@@ -2148,7 +2328,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
     print(f"[{symbol} {timeframe}] 진입 조건 없음")
 
 
-#---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
+#1---------------- lowest close 값도 있어야지 완화된 룰 다만 신뢰도가 낮을 수 있음
 # ---------------- bullish divergence ----------------
 def analyze_bullish_divergence_close(
     symbol,
@@ -2168,6 +2348,14 @@ def analyze_bullish_divergence_close(
     - 기존 30 봉 조건
     - 15 봉 low 기준, 15 봉 close 기준, 30 봉 중
       하나라도 충족하면 signal=True
+
+    추가 볼린저 밴드 조건:
+    - 직전 5개 확정봉 중 음봉의 종가가
+      당시 볼린저 하단보다 낮은지 확인
+    - 해당 캔들의 몸통 변동성이 기준 이상이면
+      강한 하단 이탈로 판단하여 진입 금지
+    - 15m: 몸통 변동성 1.5% 이상
+    - 1h: 몸통 변동성 2% 이상
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
@@ -2190,7 +2378,8 @@ def analyze_bullish_divergence_close(
 
     # 30 봉 기준 구간 직전봉을 제외한 최근 기준 구간
     base_30 = df.iloc[-31:-2]
-    # range voltality 변동성 계산용 구간
+
+    # range volatility 변동성 계산용 구간
     base_31 = df.iloc[-32:-1]
 
     # 공통 조건: 직전봉 음봉
@@ -2199,10 +2388,62 @@ def analyze_bullish_divergence_close(
     )
 
     # =================================================
+    # 볼린저 밴드 강한 하단 이탈 조건
+    # =================================================
+    # 직전봉 포함 최근 5개 확정봉
+    last_5_candles = df.iloc[-5:]
+
+    # 상승 다이버전스에서는 음봉만 확인
+    bearish_last_5 = last_5_candles[
+        last_5_candles['open'] > last_5_candles['close']
+    ].copy()
+
+    # 타임프레임별 강한 하단 이탈 변동성 기준
+    if timeframe == '15m':
+        bb_strong_volatility_threshold = 0.015
+    elif timeframe == '1h':
+        bb_strong_volatility_threshold = 0.02
+    else:
+        bb_strong_volatility_threshold = 0.015
+
+    if not bearish_last_5.empty:
+        bearish_last_5['body_volatility'] = (
+            abs(
+                bearish_last_5['close']
+                - bearish_last_5['open']
+            )
+            / bearish_last_5['open']
+        )
+
+        # 각 캔들의 종가가 해당 캔들의 당시 bb_lower보다 낮은지
+        bearish_last_5['below_bb_lower'] = (
+            bearish_last_5['close']
+            < bearish_last_5['bb_lower']
+        )
+
+        # 하단 돌파 + 큰 음봉
+        strong_bb_lower_break = (
+            bearish_last_5['below_bb_lower']
+            & (
+                bearish_last_5['body_volatility']
+                >= bb_strong_volatility_threshold
+            )
+        )
+
+        cond_strong_bb_lower_break = bool(
+            strong_bb_lower_break.any()
+        )
+    else:
+        cond_strong_bb_lower_break = False
+
+    # 강한 하단 이탈이 있으면 진입 금지
+    cond_bollinger_filter = not cond_strong_bb_lower_break
+
+    # =================================================
     # 15 봉 기준 - low 가격 기준
     # =================================================
     lowest_low_15 = base_15['low'].min()
-    # lowest_rsi_15 = base_15['rsi'].min()
+
     # -------------------------------------------------
     # base_15 중 음봉만 필터링
     # 음봉 조건: open > close
@@ -2217,7 +2458,6 @@ def analyze_bullish_divergence_close(
 
     # 음봉들 중 최저 RSI
     lowest_rsi_15 = bearish_candles_15['rsi'].min()
-   
 
     range_high_15 = base_16['close'].max()
     range_low_15 = base_16['close'].min()
@@ -2236,7 +2476,10 @@ def analyze_bullish_divergence_close(
     )
 
     cond_volatility_15 = (
-        abs(prev_candle['close'] - prev_candle['open'])
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
         / prev_candle['open']
         >= min_volatility
     )
@@ -2246,6 +2489,7 @@ def analyze_bullish_divergence_close(
         and cond_rsi_15
         and cond_volatility_15
         and cond_bearish_candle
+        and cond_bollinger_filter
     )
 
     # =================================================
@@ -2280,13 +2524,14 @@ def analyze_bullish_divergence_close(
         and cond_rsi_15
         and cond_volatility_15
         and cond_bearish_candle
+        and cond_bollinger_filter
     )
 
     # =================================================
     # 30 봉 기준
     # =================================================
     lowest_low_30 = base_30['low'].min()
-    # lowest_rsi_30 = base_30['rsi'].min()
+
     # -------------------------------------------------
     # base_30 중 음봉만 필터링
     # 음봉 조건: open > close
@@ -2301,7 +2546,6 @@ def analyze_bullish_divergence_close(
 
     # 음봉들 중 최저 RSI
     lowest_rsi_30 = bearish_candles_30['rsi'].min()
-   
 
     range_high_30 = base_31['close'].max()
     range_low_30 = base_31['close'].min()
@@ -2310,7 +2554,7 @@ def analyze_bullish_divergence_close(
     )
 
     cond_price_30 = (
-        prev_candle['close']  # 30 봉은 close 기준으로 갈게
+        prev_candle['close']
         < lowest_low_30 * (1 - price_diff_pct_30)
     )
 
@@ -2320,7 +2564,10 @@ def analyze_bullish_divergence_close(
     )
 
     cond_volatility_30 = (
-        abs(prev_candle['close'] - prev_candle['open'])
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
         / prev_candle['open']
         >= min_volatility_30
     )
@@ -2330,6 +2577,7 @@ def analyze_bullish_divergence_close(
         and cond_rsi_30
         and cond_volatility_30
         and cond_bearish_candle
+        and cond_bollinger_filter
     )
 
     # 15 봉 low 기준 또는 15 봉 close 기준 또는 30 봉 기준
@@ -2340,7 +2588,6 @@ def analyze_bullish_divergence_close(
     # =================================================
     # signal_15 또는 signal_15_2 가 True 면 range_volatility_15 사용
     # signal_30 만 True 면 range_volatility_30 사용
-    # =================================================
     if signal_15 or signal_15_2:
         range_volatility = range_volatility_15
     elif signal_30:
@@ -2352,8 +2599,19 @@ def analyze_bullish_divergence_close(
         "signal": signal,
         "side": "long",
 
-        # range_volatility 추가 (전략 함수에서 직접 사용)
-        "range_volatility": float(range_volatility) if range_volatility is not None else None,
+        # range_volatility 추가
+        "range_volatility": (
+            float(range_volatility)
+            if range_volatility is not None
+            else None
+        ),
+
+        # 볼린저 필터 정보
+        "bollinger_filter": cond_bollinger_filter,
+        "strong_bb_lower_break": cond_strong_bb_lower_break,
+        "bb_strong_volatility_threshold": (
+            float(bb_strong_volatility_threshold)
+        ),
 
         # 15 봉 low 기준 정보
         "lowest_low_15": float(lowest_low_15),
@@ -2367,7 +2625,9 @@ def analyze_bullish_divergence_close(
         # 15 봉 close 기준 추가 정보
         "lowest_close_15_2": float(lowest_close_15_2),
         "price_condition_15_2": cond_price_15_2,
-        "range_volatility_condition_15_2": cond_range_volatility_15_2,
+        "range_volatility_condition_15_2": (
+            cond_range_volatility_15_2
+        ),
         "signal_15_2": signal_15_2,
 
         # 30 봉 기준 정보
@@ -2406,6 +2666,14 @@ def analyze_bearish_divergence_close(
     - 추가 15 봉 close 기준 조건
     - 15 봉 high 기준 또는 15 봉 close 기준 중
       하나라도 충족하면 signal=True
+
+    추가 볼린저 밴드 조건:
+    - 직전 5개 확정봉 중 양봉의 종가가
+      당시 볼린저 상단보다 높은지 확인
+    - 해당 캔들의 몸통 변동성이 기준 이상이면
+      강한 상단 이탈로 판단하여 진입 금지
+    - 15m: 몸통 변동성 1.5% 이상
+    - 1h: 몸통 변동성 2% 이상
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
@@ -2416,8 +2684,8 @@ def analyze_bearish_divergence_close(
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
-    # 숏은 15 봉 기준
-    base_15 = df.iloc[-16:-2]
+    # 숏은 7 봉 기준
+    base_15 = df.iloc[-9:-2]
 
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
@@ -2428,10 +2696,62 @@ def analyze_bearish_divergence_close(
     )
 
     # =================================================
+    # 볼린저 밴드 강한 상단 이탈 조건
+    # =================================================
+    # 직전봉 포함 최근 5개 확정봉
+    last_5_candles = df.iloc[-5:]
+
+    # 하락 다이버전스에서는 양봉만 확인
+    bullish_last_5 = last_5_candles[
+        last_5_candles['open'] < last_5_candles['close']
+    ].copy()
+
+    # 타임프레임별 강한 상단 이탈 변동성 기준
+    if timeframe == '15m':
+        bb_strong_volatility_threshold = 0.015
+    elif timeframe == '1h':
+        bb_strong_volatility_threshold = 0.02
+    else:
+        bb_strong_volatility_threshold = 0.015
+
+    if not bullish_last_5.empty:
+        bullish_last_5['body_volatility'] = (
+            abs(
+                bullish_last_5['close']
+                - bullish_last_5['open']
+            )
+            / bullish_last_5['open']
+        )
+
+        # 각 캔들의 종가가 해당 캔들의 당시 bb_upper보다 높은지
+        bullish_last_5['above_bb_upper'] = (
+            bullish_last_5['close']
+            > bullish_last_5['bb_upper']
+        )
+
+        # 상단 돌파 + 큰 양봉
+        strong_bb_upper_break = (
+            bullish_last_5['above_bb_upper']
+            & (
+                bullish_last_5['body_volatility']
+                >= bb_strong_volatility_threshold
+            )
+        )
+
+        cond_strong_bb_upper_break = bool(
+            strong_bb_upper_break.any()
+        )
+    else:
+        cond_strong_bb_upper_break = False
+
+    # 강한 상단 이탈이 있으면 진입 금지
+    cond_bollinger_filter = not cond_strong_bb_upper_break
+
+    # =================================================
     # 15 봉 기준 - high 가격 기준
     # =================================================
     highest_high_15 = base_15['high'].max()
-    # highest_rsi_15 = base_15['rsi'].max()
+
     # -------------------------------------------------
     # base_15 중 양봉만 필터링
     # 양봉: open < close
@@ -2445,8 +2765,7 @@ def analyze_bearish_divergence_close(
         return None
 
     # 양봉들 중 가장 높은 RSI
-    highest_rsi_15 = bullish_candles_15['rsi'].max() 
-   
+    highest_rsi_15 = bullish_candles_15['rsi'].max()
 
     range_high_15 = base_16['close'].max()
     range_low_15 = base_16['close'].min()
@@ -2465,7 +2784,10 @@ def analyze_bearish_divergence_close(
     )
 
     cond_volatility_15 = (
-        abs(prev_candle['close'] - prev_candle['open'])
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
         / prev_candle['open']
         >= min_volatility
     )
@@ -2475,6 +2797,7 @@ def analyze_bearish_divergence_close(
         and cond_rsi_15
         and cond_volatility_15
         and cond_bullish_candle
+        and cond_bollinger_filter
     )
 
     # =================================================
@@ -2483,10 +2806,10 @@ def analyze_bearish_divergence_close(
     highest_close_15_2 = base_15['close'].max()
 
     # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15 봉 최고 종가보다 0.3% 이상 높아야 함
+    # 15m, 1h 모두 0.3% 이상 높아야 함
     cond_price_15_2 = (
         prev_candle['close']
-        > highest_close_15_2 * (1 + 0.003)  #숏은 15m이던 1h던 0.3% diff 필요. 롱은 관대
+        > highest_close_15_2 * (1 + 0.003)
     )
 
     # close 기준 변동성 조건:
@@ -2501,10 +2824,8 @@ def analyze_bearish_divergence_close(
         and cond_rsi_15
         and cond_volatility_15
         and cond_bullish_candle
+        and cond_bollinger_filter
     )
-    
-    
-    
 
     # 15 봉 high 기준 또는 15 봉 close 기준
     signal = signal_15 or signal_15_2
@@ -2513,7 +2834,6 @@ def analyze_bearish_divergence_close(
     # range_volatility 결정
     # =================================================
     # signal_15 또는 signal_15_2 가 True 면 range_volatility_15 사용
-    # =================================================
     if signal_15 or signal_15_2:
         range_volatility = range_volatility_15
     else:
@@ -2523,8 +2843,19 @@ def analyze_bearish_divergence_close(
         "signal": signal,
         "side": "short",
 
-        # range_volatility 추가 (전략 함수에서 직접 사용)
-        "range_volatility": float(range_volatility) if range_volatility is not None else None,
+        # range_volatility 추가
+        "range_volatility": (
+            float(range_volatility)
+            if range_volatility is not None
+            else None
+        ),
+
+        # 볼린저 필터 정보
+        "bollinger_filter": cond_bollinger_filter,
+        "strong_bb_upper_break": cond_strong_bb_upper_break,
+        "bb_strong_volatility_threshold": (
+            float(bb_strong_volatility_threshold)
+        ),
 
         # 15 봉 high 기준 정보
         "highest_high_15": float(highest_high_15),
@@ -2538,7 +2869,9 @@ def analyze_bearish_divergence_close(
         # 15 봉 close 기준 추가 정보
         "highest_close_15_2": float(highest_close_15_2),
         "price_condition_15_2": cond_price_15_2,
-        "range_volatility_condition_15_2": cond_range_volatility_15_2,
+        "range_volatility_condition_15_2": (
+            cond_range_volatility_15_2
+        ),
         "signal_15_2": signal_15_2,
 
         # 공통 직전봉 정보
@@ -2549,6 +2882,237 @@ def analyze_bearish_divergence_close(
         # 기본 TP 기준용
         "tp_price": float(prev_candle['close'])
     }
+
+def trade_rsi_close_strategy(
+    symbol,
+    market_id,
+    timeframe,
+    tp_long_pct,
+    tp_long_pct_1,
+    tp_long_pct_2,
+    tp_short_pct,
+    tp_short_pct_2,
+    min_volatility=0.003,
+    price_diff_pct=0.001,
+    rsi_raise_pct=0.003,
+    rsi_drop_pct=0.003,
+    min_volatility_30=0.001,
+    price_diff_pct_30=0.005,
+    rsi_raise_pct_30=0.001,
+    rsi_drop_pct_30=0.001
+):    
+    """
+    close 기준 RSI 다이버전스 전략 실행 함수.
+
+    - 기존 15 봉 조건을 유지한다.
+    - 추가로 30 봉 조건도 함께 본다.
+    - 둘 중 하나라도 만족하면 진입한다.
+    """
+
+    global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
+    global last_xrp_long_1h, last_xrp_long_15m, last_eth_long_1h, last_eth_long_15m
+    global last_xrp_short_1h, last_xrp_short_15m
+    global last_link_short_5m, last_link_long_5m
+
+    now = time.time()
+
+    # 전체 공통 쿨다운
+    if now - last_sol_trade_time < 3600:
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_sol_trade_time:.1f}초 경과)")
+        return
+
+    # timeframe 별 쿨다운
+    if timeframe == '1h' and now - last_sol_buy_time_1h < 10800:
+        minutes_ago = (now - last_sol_buy_time_1h) / 60
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (120 분 내 중복매수 금지)")
+        return
+
+    if timeframe == '15m' and now - last_sol_buy_time_15m < 3600:
+        minutes_ago = (now - last_sol_buy_time_15m) / 60
+        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (30 분 내 중복매수 금지)")
+        return
+
+    set_margin_and_leverage(symbol)
+
+    # 이미 포지션이 있으면 진입 금지
+    if has_position(market_id):
+        print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
+        return
+
+    # 주문 수량 계산
+    available_usdt = get_available_usdt()
+    margin_to_use = available_usdt * 0.5
+    current_price = float(exchange.fetch_ticker(symbol)['last'])
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    print(f"[{symbol} {timeframe}] available_usdt={available_usdt:.4f}, price={current_price}, amount={amount}")
+
+    if amount <= 0:
+        print(f"[{symbol} {timeframe}] 주문 수량이 0 이라서 중단")
+        return
+
+    # 상승/하락 다이버전스 탐색
+    bull_close = analyze_bullish_divergence_close(
+        symbol=symbol,
+        timeframe=timeframe,
+        rsi_raise_pct=rsi_raise_pct,
+        min_volatility=min_volatility,
+        price_diff_pct=price_diff_pct,
+        rsi_raise_pct_30=rsi_raise_pct_30,
+        min_volatility_30=min_volatility_30,
+        price_diff_pct_30=price_diff_pct_30
+    )
+
+    bear_close = analyze_bearish_divergence_close(
+        symbol=symbol,
+        timeframe=timeframe,
+        rsi_drop_pct=rsi_drop_pct,
+        min_volatility=min_volatility,
+        price_diff_pct=price_diff_pct,
+        rsi_drop_pct_30=rsi_drop_pct_30,
+        min_volatility_30=min_volatility_30,
+        price_diff_pct_30=price_diff_pct_30
+    )
+
+    print(f"[{symbol} {timeframe}] BULL_CLOSE={bull_close}")
+    print(f"[{symbol} {timeframe}] BEAR_CLOSE={bear_close}")
+
+    # CME 편차 조건은 신호가 있을 때만 확인
+    if (bull_close and bull_close["signal"]) or (bear_close and bear_close["signal"]):
+        try:
+            cme_price = get_last_saturday_6_close()
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
+            return
+
+        prev_close = (
+            bull_close["prev_close"] if (bull_close and bull_close["signal"])
+            else bear_close["prev_close"]
+        )
+        deviation = abs(prev_close - cme_price) / cme_price
+
+        if deviation < 0.01:
+            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+            return
+
+        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
+
+    # MA18 추세 필터
+    trend = ma18_4day_change_trend()
+    vol_trend = ma18_6day_volatility_trend()
+
+    if trend is None or vol_trend is None:
+        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
+        return
+
+    # 업비트 일봉 시가와 MA18/MA43 비교값 계산
+    upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
+    yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
+    upbit_today_open = get_upbit_today_open()
+    upbit_yesterday_open = get_upbit_yesterday_open()
+    # 어제 시가가 둘 다 위에 있었는지
+    yesterday_above_both = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
+    # 어제 시가가 둘 다 아래에 있었는지
+    yesterday_below_both = upbit_yesterday_open < yesterday_ma18 and upbit_yesterday_open < yesterday_ma43
+    # 오늘 시가가 둘 다 위로 돌파했는지
+    today_above_both = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
+    # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
+    today_below_either = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
+
+    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
+    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
+
+    sl_pct = 0.006
+
+    # 롱 처리 # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
+    if bull_close and bull_close["signal"]:
+        # ✅ 롱 진입 금지 조건들 주석 처리
+        # if yesterday_above_both and today_below_either:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
+        #     return
+
+        # if trend["down_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
+        #     return
+
+        # if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
+        #     return
+
+
+
+        if bull_close["range_volatility"] > 0.02:
+            tp_pct = tp_long_pct_2
+        elif bull_close["range_volatility"] >= 0.013:
+            tp_pct = tp_long_pct_1
+        else:
+            tp_pct = tp_long_pct
+
+        tp_price = bull_close["prev_close"] * (1 + tp_pct)
+        sl_price = bull_close["prev_close"] * (1 - sl_pct)
+
+        exchange.create_market_buy_order(symbol, amount)
+
+        last_sol_trade_time = time.time()
+        if timeframe == '1h':
+            last_sol_buy_time_1h = time.time()
+            last_xrp_long_1h = time.time()
+            last_eth_long_1h = time.time()
+        elif timeframe == '15m':
+            last_sol_buy_time_15m = time.time()
+            last_xrp_long_15m = time.time()
+            last_eth_long_15m = time.time()
+        elif timeframe == '5m':
+            last_link_long_5m = time.time()
+
+        place_tp_long(symbol, amount, tp_price)
+        place_sl_long(symbol, sl_price)
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        return
+
+    # 숏 처리  # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
+    if bear_close and bear_close["signal"]:
+        # ✅ 숏 진입 금지 조건들 주석 처리
+        # if yesterday_below_both and today_above_both:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 전환으로 숏 진입 금지")
+        #     return
+
+        # if trend["up_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
+        #     return
+
+        # if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
+        #     return
+
+        # 30 봉 신호면 더 넓은 TP 를 사용
+        tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
+        tp_price = bear_close["prev_close"] * (1 - tp_pct)
+        sl_price = bear_close["prev_close"] * (1 + sl_pct)
+
+        exchange.create_market_sell_order(symbol, amount)
+
+        last_sol_trade_time = time.time()
+        if timeframe == '1h':
+            last_sol_buy_time_1h = time.time()
+            last_xrp_short_1h = time.time()
+        elif timeframe == '15m':
+            last_sol_buy_time_15m = time.time()
+            last_xrp_short_15m = time.time()
+        elif timeframe == '5m':
+            last_link_short_5m = time.time()
+
+        place_tp_short(symbol, amount, tp_price)
+        place_sl_short(symbol, sl_price)
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        return
+
+    print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
+
+#1 rsi close 전략
+
+
 
 ## 현재봉 전략 추가 # 5m봉 0.7%이상 급등 잡기위한 current 전략
 def get_confirmed_candles_with_rsi_current(
@@ -2997,7 +3561,7 @@ def analyze_bearish_divergence_close_current(
     current_candle = df.iloc[-1]   # 현재봉
     prev_candle = df.iloc[-2]      # 직전 확정봉
 
-    base_15 = df.iloc[-12:-2]  # 숏은 최근 12개봉만 (인덱스 조정)
+    base_15 = df.iloc[-9:-2]  # 숏은 최근 7개봉만 (인덱스 조정)
     base_16 = df.iloc[-17:-1]
 
     highest_close = base_15['high'].max()
@@ -3695,6 +4259,9 @@ def analyze_50ma_close_strategy(symbol, timeframe, df_cache):
     return None
 
 #4 단타왕 ㄴ자 50ma 매매법
+# 1% 하락 캔들 찾아 매수진입시 해당 신호는 pending에서 지워짐. 손절 이후 재진입 되지 않음
+# 포지션이 열려있는 동안은 새신호 등록도 막힘
+# 50ma 돌파 시그널, 위아래로 몇번 반복시 첫 시그널 vs 마지막 시그널 중 멀로 보나? -> 최초 시그널 기준으로만 봅니다. 
 def trade_50ma_close_strategy(symbol, market_id, timeframe):
     global last_50ma_close_trade_time, last_50ma_close_5m, last_50ma_close_15m, last_50ma_close_1h
     global pending_50ma_close_signal
@@ -3705,20 +4272,20 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
 
     # 공통 60 초 쿨다운
-    if now - last_50ma_close_trade_time < 60:
+    if now - last_50ma_close_trade_time < 900:
         print(f"[{symbol} 50MA_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_50ma_close_trade_time:.1f}초 경과)")
         return
 
 
     # 5m 전용 쿨다운 (예: 10 분)
-    if timeframe == '5m' and now - last_50ma_close_5m < 600:
+    if timeframe == '5m' and now - last_50ma_close_5m < 1200:
         minutes_ago = (now - last_50ma_close_5m) / 60
         print(f"[{symbol} 50MA_CLOSE 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (10 분 내 중복매수 금지)")
         return
 
 
     # 15m 전용 쿨다운 (예: 120 분)
-    if timeframe == '15m' and now - last_50ma_close_15m < 2700:
+    if timeframe == '15m' and now - last_50ma_close_15m < 3600:
         minutes_ago = (now - last_50ma_close_15m) / 60
         print(f"[{symbol} 50MA_CLOSE 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
         return
@@ -3761,25 +4328,20 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
     sig = analyze_50ma_close_strategy(symbol, timeframe, df)
 
 
-    # 1) 진입 신호가 새로 발생했는지 확인
-    if sig and sig["signal"]:
-        if key not in pending_50ma_close_signal:
-            pending_50ma_close_signal[key] = {
-                "signal_info": sig,
-                "signal_time": now,
-                "signal_candle_index": sig["signal_candle_index"],
-                "signal_candle_close": sig["signal_candle_close"],
-                "signal_candle_low": sig["signal_candle_low"],
-            }
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 발생 → 1% 하락 캔들 대기 시작 (timeframe={timeframe})")
-    else:
-        if key in pending_50ma_close_signal:
-            print(f"[{symbol} 50MA_CLOSE] 진입 신호 소멸 → 대기 상태 초기화 (timeframe={timeframe})")
-            del pending_50ma_close_signal[key]
-        return
+    # [수정] 1) 새 신호가 뜨면 등록만 하고, 신호가 없다고 해서 기존 대기를 지우지 않음
+    # (기존 코드는 else 분기에서 pending 을 즉시 삭제 + return 해버려서
+    #  돌파 다음 봉부터 signal=False 가 되는 순간 대기가 항상 초기화되는 버그가 있었음)
+    if sig and sig["signal"] and key not in pending_50ma_close_signal:
+        pending_50ma_close_signal[key] = {
+            "signal_info": sig,
+            "signal_time": now,
+            "signal_candle_index": sig["signal_candle_index"],
+            "signal_candle_close": sig["signal_candle_close"],
+            "signal_candle_low": sig["signal_candle_low"],
+        }
+        print(f"[{symbol} 50MA_CLOSE] 진입 신호 발생 → 1% 하락 캔들 대기 시작 (timeframe={timeframe})")
 
-
-    # 2) 대기 중인 신호가 있으면, 1% 이상 하락 캔들 확인
+    # [수정] 2) 대기 중인 신호가 없으면 여기서 종료 (기존 else 블록 대체)
     if key not in pending_50ma_close_signal:
         return
 
@@ -4149,233 +4711,6 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
         f"amount={amount} | price={current_price} | sl={sl_price}"
     )
     
-def trade_rsi_close_strategy(
-    symbol,
-    market_id,
-    timeframe,
-    tp_long_pct,
-    tp_long_pct_1,
-    tp_long_pct_2,
-    tp_short_pct,
-    tp_short_pct_2,
-    min_volatility=0.003,
-    price_diff_pct=0.001,
-    rsi_raise_pct=0.003,
-    rsi_drop_pct=0.003,
-    min_volatility_30=0.001,
-    price_diff_pct_30=0.005,
-    rsi_raise_pct_30=0.001,
-    rsi_drop_pct_30=0.001
-):    
-    """
-    close 기준 RSI 다이버전스 전략 실행 함수.
-
-    - 기존 15 봉 조건을 유지한다.
-    - 추가로 30 봉 조건도 함께 본다.
-    - 둘 중 하나라도 만족하면 진입한다.
-    """
-
-    global last_sol_trade_time, last_sol_buy_time_1h, last_sol_buy_time_15m
-    global last_xrp_long_1h, last_xrp_long_15m, last_eth_long_1h, last_eth_long_15m
-    global last_xrp_short_1h, last_xrp_short_15m
-    global last_link_short_5m, last_link_long_5m
-
-    now = time.time()
-
-    # 전체 공통 쿨다운
-    if now - last_sol_trade_time < 60:
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_sol_trade_time:.1f}초 경과)")
-        return
-
-    # timeframe 별 쿨다운
-    if timeframe == '1h' and now - last_sol_buy_time_1h < 7200:
-        minutes_ago = (now - last_sol_buy_time_1h) / 60
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (120 분 내 중복매수 금지)")
-        return
-
-    if timeframe == '15m' and now - last_sol_buy_time_15m < 1800:
-        minutes_ago = (now - last_sol_buy_time_15m) / 60
-        print(f"[{symbol} {timeframe} RSI_CLOSE] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (30 분 내 중복매수 금지)")
-        return
-
-    set_margin_and_leverage(symbol)
-
-    # 이미 포지션이 있으면 진입 금지
-    if has_position(market_id):
-        print(f"[{symbol} {timeframe}] 기존 포지션이 있어서 거래하지 않음")
-        return
-
-    # 주문 수량 계산
-    available_usdt = get_available_usdt()
-    margin_to_use = available_usdt * 0.5
-    current_price = float(exchange.fetch_ticker(symbol)['last'])
-    notional = margin_to_use * LEVERAGE
-    amount = round(notional / current_price, 3)
-
-    print(f"[{symbol} {timeframe}] available_usdt={available_usdt:.4f}, price={current_price}, amount={amount}")
-
-    if amount <= 0:
-        print(f"[{symbol} {timeframe}] 주문 수량이 0 이라서 중단")
-        return
-
-    # 상승/하락 다이버전스 탐색
-    bull_close = analyze_bullish_divergence_close(
-        symbol=symbol,
-        timeframe=timeframe,
-        rsi_raise_pct=rsi_raise_pct,
-        min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct,
-        rsi_raise_pct_30=rsi_raise_pct_30,
-        min_volatility_30=min_volatility_30,
-        price_diff_pct_30=price_diff_pct_30
-    )
-
-    bear_close = analyze_bearish_divergence_close(
-        symbol=symbol,
-        timeframe=timeframe,
-        rsi_drop_pct=rsi_drop_pct,
-        min_volatility=min_volatility,
-        price_diff_pct=price_diff_pct,
-        rsi_drop_pct_30=rsi_drop_pct_30,
-        min_volatility_30=min_volatility_30,
-        price_diff_pct_30=price_diff_pct_30
-    )
-
-    print(f"[{symbol} {timeframe}] BULL_CLOSE={bull_close}")
-    print(f"[{symbol} {timeframe}] BEAR_CLOSE={bear_close}")
-
-    # CME 편차 조건은 신호가 있을 때만 확인
-    if (bull_close and bull_close["signal"]) or (bear_close and bear_close["signal"]):
-        try:
-            cme_price = get_last_saturday_6_close()
-        except Exception as e:
-            print(f"[{symbol} {timeframe}] 토요일 06:00 가격 조회 실패: {e}")
-            return
-
-        prev_close = (
-            bull_close["prev_close"] if (bull_close and bull_close["signal"])
-            else bear_close["prev_close"]
-        )
-        deviation = abs(prev_close - cme_price) / cme_price
-
-        if deviation < 0.01:
-            print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
-            return
-
-        print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
-
-    # MA18 추세 필터
-    trend = ma18_4day_change_trend()
-    vol_trend = ma18_6day_volatility_trend()
-
-    if trend is None or vol_trend is None:
-        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
-        return
-
-    # 업비트 일봉 시가와 MA18/MA43 비교값 계산
-    upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
-    yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
-    upbit_today_open = get_upbit_today_open()
-    upbit_yesterday_open = get_upbit_yesterday_open()
-    # 어제 시가가 둘 다 위에 있었는지
-    yesterday_above_both = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
-    # 어제 시가가 둘 다 아래에 있었는지
-    yesterday_below_both = upbit_yesterday_open < yesterday_ma18 and upbit_yesterday_open < yesterday_ma43
-    # 오늘 시가가 둘 다 위로 돌파했는지
-    today_above_both = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
-    # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
-    today_below_either = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
-
-    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
-    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
-
-    sl_pct = 0.006
-
-    # 롱 처리 # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
-    if bull_close and bull_close["signal"]:
-        # ✅ 롱 진입 금지 조건들 주석 처리
-        # if yesterday_above_both and today_below_either:
-        #     print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
-        #     return
-
-        # if trend["down_3days"]:
-        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
-        #     return
-
-        # if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
-        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
-        #     return
-
-
-
-        if bull_close["range_volatility"] > 0.02:
-            tp_pct = tp_long_pct_2
-        elif bull_close["range_volatility"] >= 0.013:
-            tp_pct = tp_long_pct_1
-        else:
-            tp_pct = tp_long_pct
-
-        tp_price = bull_close["prev_close"] * (1 + tp_pct)
-        sl_price = bull_close["prev_close"] * (1 - sl_pct)
-
-        exchange.create_market_buy_order(symbol, amount)
-
-        last_sol_trade_time = time.time()
-        if timeframe == '1h':
-            last_sol_buy_time_1h = time.time()
-            last_xrp_long_1h = time.time()
-            last_eth_long_1h = time.time()
-        elif timeframe == '15m':
-            last_sol_buy_time_15m = time.time()
-            last_xrp_long_15m = time.time()
-            last_eth_long_15m = time.time()
-        elif timeframe == '5m':
-            last_link_long_5m = time.time()
-
-        place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
-        return
-
-    # 숏 처리  # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
-    if bear_close and bear_close["signal"]:
-        # ✅ 숏 진입 금지 조건들 주석 처리
-        # if yesterday_below_both and today_above_both:
-        #     print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 전환으로 숏 진입 금지")
-        #     return
-
-        # if trend["up_3days"]:
-        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
-        #     return
-
-        # if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
-        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
-        #     return
-
-        # 30 봉 신호면 더 넓은 TP 를 사용
-        tp_pct = tp_short_pct_2 if bear_close["range_volatility"] > 0.02 else tp_short_pct
-        tp_price = bear_close["prev_close"] * (1 - tp_pct)
-        sl_price = bear_close["prev_close"] * (1 + sl_pct)
-
-        exchange.create_market_sell_order(symbol, amount)
-
-        last_sol_trade_time = time.time()
-        if timeframe == '1h':
-            last_sol_buy_time_1h = time.time()
-            last_xrp_short_1h = time.time()
-        elif timeframe == '15m':
-            last_sol_buy_time_15m = time.time()
-            last_xrp_short_15m = time.time()
-        elif timeframe == '5m':
-            last_link_short_5m = time.time()
-
-        place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
-        return
-
-    print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
-
 
 
     
