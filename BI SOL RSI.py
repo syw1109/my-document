@@ -1790,11 +1790,11 @@ def analyze_bullish_divergence(
 
     # 타임프레임별 강한 하단 이탈 변동성 기준
     if timeframe == '15m':
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.008
     elif timeframe == '1h':
-        bb_strong_volatility_threshold = 0.02
+        bb_strong_volatility_threshold = 0.016
     else:
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.016
 
     # 최근 5개 중 음봉만 확인
     bearish_last_5 = last_5_candles[
@@ -1944,8 +1944,8 @@ def analyze_bearish_divergence(
     prev_candle = df.iloc[-1]
 
     # 3~11, 2번 봉 제외
-    # 기존 코드의 7개 봉 기준 유지
-    base_15 = df.iloc[-9:-2]
+    # 기존 코드의 6개 봉 기준 유지 - 숏은 6개봉으로만 다이버 판단  직전봉 제외 6개봉 직전봉-1, -2 ~ -7(6개봉)
+    base_15 = df.iloc[-8:-2]
 
     # 2~17, 변동성 계산 구간
     base_16 = df.iloc[-17:-1]
@@ -1988,11 +1988,11 @@ def analyze_bearish_divergence(
 
     # 타임프레임별 강한 상단 이탈 변동성 기준
     if timeframe == '15m':
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.008
     elif timeframe == '1h':
-        bb_strong_volatility_threshold = 0.02
+        bb_strong_volatility_threshold = 0.016
     else:
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.016
 
     # 최근 5개 중 양봉만 확인
     bullish_last_5 = last_5_candles[
@@ -2400,11 +2400,11 @@ def analyze_bullish_divergence_close(
 
     # 타임프레임별 강한 하단 이탈 변동성 기준
     if timeframe == '15m':
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.008
     elif timeframe == '1h':
-        bb_strong_volatility_threshold = 0.02
+        bb_strong_volatility_threshold = 0.016
     else:
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.016
 
     if not bearish_last_5.empty:
         bearish_last_5['body_volatility'] = (
@@ -2577,7 +2577,7 @@ def analyze_bullish_divergence_close(
         and cond_rsi_30
         and cond_volatility_30
         and cond_bearish_candle
-        and cond_bollinger_filter
+        and cond_bollinger_filter  # 30봉은 볼린저 안보게 하고싶은데, 이미 길게 나왔으니 근데 그럼 15봉에서 걸러낸게 의미가 없는데,,
     )
 
     # 15 봉 low 기준 또는 15 봉 close 기준 또는 30 봉 기준
@@ -2684,8 +2684,8 @@ def analyze_bearish_divergence_close(
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
-    # 숏은 7 봉 기준
-    base_15 = df.iloc[-9:-2]
+    # 숏은 6 봉 기준
+    base_15 = df.iloc[-8:-2]  # -2,-3,-4,-5,-6,-7 직전봉-1
 
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
@@ -2708,11 +2708,11 @@ def analyze_bearish_divergence_close(
 
     # 타임프레임별 강한 상단 이탈 변동성 기준
     if timeframe == '15m':
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.008
     elif timeframe == '1h':
-        bb_strong_volatility_threshold = 0.02
+        bb_strong_volatility_threshold = 0.016
     else:
-        bb_strong_volatility_threshold = 0.015
+        bb_strong_volatility_threshold = 0.016
 
     if not bullish_last_5.empty:
         bullish_last_5['body_volatility'] = (
@@ -3111,6 +3111,495 @@ def trade_rsi_close_strategy(
     print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
 
 #1 rsi close 전략
+
+#13 rsi pistol 전략
+def analyze_bullish_divergence_pistol(
+    symbol,
+    timeframe,
+    price_diff_pct=0.001,
+    rsi_limit_1=1.03,
+    rsi_limit_2=0.995,
+    volatility_1=0.008,
+    volatility_1_strong=0.016,
+    volatility_2=0.005
+):
+    """
+    롱 전용 close 기준 RSI 다이버전스 판단 함수.
+
+    기준봉:
+    - prev_candle = df.iloc[-1]
+    - 직전 확정봉을 판단봉으로 사용
+    - 직전봉은 양봉이어야 함
+
+    기준 구간:
+    - base_12 = df.iloc[-13:-7]
+      직전봉 기준 7번째 전 ~ 12번째 전, 총 6개 봉
+    - base_25 = df.iloc[-26:-13]
+      직전봉 기준 13번째 전 ~ 25번째 전, 총 13개 봉
+
+    가격 조건:
+    - 직전봉 close가 각 기준 구간 양봉들의 highest close보다
+      0.1% 이상 높아야 함
+
+    RSI 조건:
+    - 1범위: prev RSI < highest RSI * 1.03
+    - 2범위: prev RSI <= highest RSI * 0.995
+
+    변동성 조건:
+    - 1범위:
+      body volatility >= 0.8%
+      그리고 종가가 당시 bb_upper를 돌파
+      또는 body volatility >= 1.6%
+    - 2범위:
+      body volatility >= 0.5%
+
+    최종 신호:
+    - 1범위 조건 또는 2범위 조건 중 하나라도 만족하면 True
+    """
+
+    df = get_confirmed_candles_with_rsi(symbol, timeframe)
+
+    # bb 계산과 25번째 기준 구간 사용에 필요한 최소 데이터
+    if df is None or len(df) < 26:
+        return None
+
+    # 직전 확정봉
+    prev_candle = df.iloc[-1]
+
+    # 직전봉은 양봉이어야 함
+    cond_bullish_candle = (
+        prev_candle['open'] < prev_candle['close']
+    )
+
+    # -------------------------------------------------
+    # 기준 구간
+    # -------------------------------------------------
+    # 직전봉 기준 7~12번째 전, 총 6개 봉
+    base_12 = df.iloc[-13:-7]
+
+    # 직전봉 기준 13~25번째 전, 총 13개 봉
+    base_25 = df.iloc[-26:-13]
+
+    # =================================================
+    # 1범위: 직전 7~12개 전 구간
+    # =================================================
+    bullish_candles_12 = base_12[
+        base_12['open'] < base_12['close']
+    ]
+
+    if bullish_candles_12.empty:
+        return None
+
+    highest_close_12 = bullish_candles_12['close'].max()
+    highest_rsi_12 = bullish_candles_12['rsi'].max()
+
+    # 1범위 가격 조건
+    cond_price_12 = (
+        prev_candle['close']
+        >= highest_close_12 * (1 + price_diff_pct)
+    )
+
+    # 1범위 RSI 조건
+    # 직전 RSI가 과거 최고 RSI * 1.03보다 낮아야 함
+    cond_rsi_12 = (
+        prev_candle['rsi']
+        < highest_rsi_12 * rsi_limit_1
+    )
+
+    # 직전봉 몸통 변동성
+    prev_body_volatility = (
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
+        / prev_candle['open']
+    )
+
+    # 1범위 변동성 조건
+    # 0.8% 이상이면서 BB 상단 종가 돌파
+    cond_volatility_12_bb = (
+        prev_body_volatility >= volatility_1
+        and prev_candle['close'] > prev_candle['bb_upper']
+    )
+
+    # 또는 몸통 변동성이 1.6% 이상
+    cond_volatility_12_strong = (
+        prev_body_volatility >= volatility_1_strong
+    )
+
+    cond_volatility_12 = (
+        cond_volatility_12_bb
+        or cond_volatility_12_strong
+    )
+
+    # 1범위 최종 신호
+    signal_12 = (
+        cond_bullish_candle
+        and cond_price_12
+        and cond_rsi_12
+        and cond_volatility_12
+    )
+
+    # =================================================
+    # 2범위: 직전 13~25개 전 구간
+    # =================================================
+    bullish_candles_25 = base_25[
+        base_25['open'] < base_25['close']
+    ]
+
+    if bullish_candles_25.empty:
+        return None
+
+    highest_close_25 = bullish_candles_25['close'].max()
+    highest_rsi_25 = bullish_candles_25['rsi'].max()
+
+    # 2범위 가격 조건
+    cond_price_25 = (
+        prev_candle['close']
+        >= highest_close_25 * (1 + price_diff_pct)
+    )
+
+    # 2범위 RSI 조건
+    # 직전 RSI가 과거 최고 RSI * 0.995 이하
+    cond_rsi_25 = (
+        prev_candle['rsi']
+        <= highest_rsi_25 * rsi_limit_2
+    )
+
+    # 2범위 변동성 조건
+    cond_volatility_25 = (
+        prev_body_volatility >= volatility_2
+    )
+
+    # 2범위 최종 신호
+    signal_25 = (
+        cond_bullish_candle
+        and cond_price_25
+        and cond_rsi_25
+        and cond_volatility_25
+    )
+
+    # 1범위 또는 2범위 충족
+    signal = signal_12 or signal_25
+
+    # 어떤 범위에서 신호가 발생했는지 구분
+    if signal_12:
+        signal_range = "range_12"
+    elif signal_25:
+        signal_range = "range_25"
+    else:
+        signal_range = None
+
+    # 신호 범위에 따른 range volatility
+    if signal_12:
+        range_high = base_12['close'].max()
+        range_low = base_12['close'].min()
+    elif signal_25:
+        range_high = base_25['close'].max()
+        range_low = base_25['close'].min()
+    else:
+        range_high = None
+        range_low = None
+
+    if range_high is not None and range_high != 0:
+        range_volatility = (
+            (range_high - range_low)
+            / range_high
+        )
+    else:
+        range_volatility = None
+
+    return {
+        "signal": signal,
+        "side": "long",
+        "signal_range": signal_range,
+
+        # 구간별 신호
+        "signal_12": signal_12,
+        "signal_25": signal_25,
+
+        # 구간별 캔들 수
+        "bullish_candle_count_12": int(
+            len(bullish_candles_12)
+        ),
+        "bullish_candle_count_25": int(
+            len(bullish_candles_25)
+        ),
+
+        # 1범위 기준값
+        "highest_close_12": float(highest_close_12),
+        "highest_rsi_12": float(highest_rsi_12),
+        "price_condition_12": cond_price_12,
+        "rsi_condition_12": cond_rsi_12,
+        "volatility_condition_12": cond_volatility_12,
+        "volatility_12_bb_condition": (
+            cond_volatility_12_bb
+        ),
+        "volatility_12_strong_condition": (
+            cond_volatility_12_strong
+        ),
+
+        # 2범위 기준값
+        "highest_close_25": float(highest_close_25),
+        "highest_rsi_25": float(highest_rsi_25),
+        "price_condition_25": cond_price_25,
+        "rsi_condition_25": cond_rsi_25,
+        "volatility_condition_25": cond_volatility_25,
+
+        # 공통 직전봉 정보
+        "bullish_candle_condition": (
+            cond_bullish_candle
+        ),
+        "prev_open": float(prev_candle['open']),
+        "prev_close": float(prev_candle['close']),
+        "prev_rsi": float(prev_candle['rsi']),
+        "prev_body_volatility": float(
+            prev_body_volatility
+        ),
+        "prev_bb_upper": float(prev_candle['bb_upper']),
+
+        # 범위 변동성
+        "range_volatility": (
+            float(range_volatility)
+            if range_volatility is not None
+            else None
+        ),
+
+        # TP 기준
+        "tp_price": float(prev_candle['close'])
+    }
+
+def trade_rsi_pistol_strategy(
+    symbol,
+    market_id,
+    timeframe,
+    tp_long_pct,
+    tp_long_pct_1,
+    tp_long_pct_2
+):
+    """
+    롱 전용 RSI Pistol 전략.
+
+    - analyze_bullish_divergence_pistol()만 사용
+    - 직전봉 변동성 >= 1.5%:
+      손절 1.6%
+    - 직전봉 변동성 < 1.5%:
+      손절 0.7%
+    """
+
+    global last_sol_trade_time
+    global last_sol_buy_time_1h
+    global last_sol_buy_time_15m
+
+    now = time.time()
+
+    # -------------------------------------------------
+    # 전체 공통 쿨다운
+    # -------------------------------------------------
+    if now - last_sol_trade_time < 3600:
+        elapsed = now - last_sol_trade_time
+
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"공통 쿨다운 중 | "
+            f"경과={elapsed:.1f}초"
+        )
+        return
+
+    # -------------------------------------------------
+    # 타임프레임별 쿨다운
+    # -------------------------------------------------
+    if (
+        timeframe == '1h'
+        and now - last_sol_buy_time_1h < 10800
+    ):
+        elapsed = now - last_sol_buy_time_1h
+
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"1시간봉 쿨다운 중 | "
+            f"경과={elapsed / 60:.1f}분"
+        )
+        return
+
+    if (
+        timeframe == '15m'
+        and now - last_sol_buy_time_15m < 3600
+    ):
+        elapsed = now - last_sol_buy_time_15m
+
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"15분봉 쿨다운 중 | "
+            f"경과={elapsed / 60:.1f}분"
+        )
+        return
+
+    # -------------------------------------------------
+    # 레버리지 및 포지션 확인
+    # -------------------------------------------------
+    set_margin_and_leverage(symbol)
+
+    if has_position(market_id):
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"기존 포지션이 있어 진입하지 않음"
+        )
+        return
+
+    # -------------------------------------------------
+    # 주문 수량 계산
+    # -------------------------------------------------
+    available_usdt = get_available_usdt()
+    margin_to_use = available_usdt * 0.5
+
+    current_price = float(
+        exchange.fetch_ticker(symbol)['last']
+    )
+
+    notional = margin_to_use * LEVERAGE
+    amount = round(notional / current_price, 3)
+
+    print(
+        f"[{symbol} {timeframe} RSI_PISTOL] "
+        f"available_usdt={available_usdt:.4f}, "
+        f"price={current_price}, "
+        f"amount={amount}"
+    )
+
+    if amount <= 0:
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"주문 수량이 0이라 중단"
+        )
+        return
+
+    # -------------------------------------------------
+    # 롱 신호 분석
+    # -------------------------------------------------
+    bull_pistol = analyze_bullish_divergence_pistol(
+        symbol=symbol,
+        timeframe=timeframe,
+        price_diff_pct=0.0005,
+        rsi_limit_1=1.03,
+        rsi_limit_2=0.995,
+        volatility_1=0.008,
+        volatility_1_strong=0.016,
+        volatility_2=0.005
+    )
+
+    print(
+        f"[{symbol} {timeframe}] "
+        f"BULL_PISTOL={bull_pistol}"
+    )
+
+    if bull_pistol is None:
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"분석 결과 없음"
+        )
+        return
+
+    if not bull_pistol["signal"]:
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"롱 진입 조건 없음"
+        )
+        return
+
+    # -------------------------------------------------
+    # CME 편차 조건
+    # -------------------------------------------------
+    try:
+        cme_price = get_last_saturday_6_close()
+    except Exception as e:
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"CME 가격 조회 실패: {e}"
+        )
+        return
+
+    prev_close = bull_pistol["prev_close"]
+    deviation = abs(prev_close - cme_price) / cme_price
+
+    if deviation < 0.01:
+        print(
+            f"[{symbol} {timeframe} RSI_PISTOL] "
+            f"CME 편차 1% 미만으로 진입 금지 | "
+            f"CME={cme_price:.2f}, "
+            f"prev_close={prev_close:.2f}"
+        )
+        return
+
+    print(
+        f"[{symbol} {timeframe} RSI_PISTOL] "
+        f"CME 편차 충족 {deviation * 100:.2f}% | "
+        f"CME={cme_price:.2f}, "
+        f"prev_close={prev_close:.2f}"
+    )
+
+
+    # -------------------------------------------------
+    # TP와 SL 계산
+    # -------------------------------------------------
+    range_volatility = bull_pistol["range_volatility"]
+
+    if (
+        range_volatility is not None
+        and range_volatility > 0.02
+    ):
+        tp_pct = tp_long_pct_2
+    elif (
+        range_volatility is not None
+        and range_volatility >= 0.013
+    ):
+        tp_pct = tp_long_pct_1
+    else:
+        tp_pct = tp_long_pct
+
+    # 직전봉 몸통 변동성 기준 손절
+    if bull_pistol["prev_body_volatility"] >= 0.015:
+        sl_pct = 0.016
+    else:
+        sl_pct = 0.007
+
+    tp_price = (
+        bull_pistol["prev_close"]
+        * (1 + tp_pct)
+    )
+
+    sl_price = (
+        bull_pistol["prev_close"]
+        * (1 - sl_pct)
+    )
+
+    # -------------------------------------------------
+    # 시장가 롱 진입
+    # -------------------------------------------------
+    exchange.create_market_buy_order(symbol, amount)
+
+    trade_time = time.time()
+
+    last_sol_trade_time = trade_time
+
+    if timeframe == '1h':
+        last_sol_buy_time_1h = trade_time
+    elif timeframe == '15m':
+        last_sol_buy_time_15m = trade_time
+
+    place_tp_long(symbol, amount, tp_price)
+    place_sl_long(symbol, sl_price)
+
+    print(
+        f"[{symbol} {timeframe} RSI_PISTOL] "
+        f"롱 진입 완료 | "
+        f"amount={amount} | "
+        f"price={current_price} | "
+        f"tp={tp_price} | "
+        f"sl={sl_price} | "
+        f"sl_pct={sl_pct * 100:.2f}%"
+    )
+
 
 
 
@@ -5280,6 +5769,30 @@ while True:
         # ADA 미보유 시 기존 전략들 실행
         # -------------------------------------------------
 
+        #13 RSI pistol 전략#
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_pistol_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='1h',
+                tp_long_pct=0.015,
+                tp_long_pct_1=0.018,
+                tp_long_pct_2=0.02
+            )
+
+        # 1시간봉에서 포지션이 생기지 않은 경우에만 15분봉 평가
+        if not has_position(MARKET_ID_SOL):
+            trade_rsi_pistol_strategy(
+                symbol=SOL_SYMBOL,
+                market_id=MARKET_ID_SOL,
+                timeframe='15m',
+                tp_long_pct=0.012,
+                tp_long_pct_1=0.014,
+                tp_long_pct_2=0.018
+            )
+
+        time.sleep(2)
+        
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
         # 1시간봉 먼저 평가
@@ -5411,7 +5924,7 @@ while True:
             )
 
 
-        time.sleep(2) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
+        time.sleep(1) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
 
         # SOL/USDT 5m VOLUME_BREAKOUT - 260911 코드가 동작을 안하고 일단 5분봉이라서 노이즈가 많아서 홀드 시킴
         # if not has_position(MARKET_ID_SOL):
