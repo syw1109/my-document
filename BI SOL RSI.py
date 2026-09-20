@@ -2349,38 +2349,74 @@ def analyze_bullish_divergence_close(
     - 15 봉 low 기준, 15 봉 close 기준, 30 봉 중
       하나라도 충족하면 signal=True
 
+    추가 30 봉 close 조건:
+    - 30 봉 추가 확인 구간은 df.iloc[-16:-1]
+    - 해당 범위의 음봉 중 lowest close를 계산
+    - 직전봉 close가 해당 lowest close보다
+      0.2% 이상 낮아야 함
+
     추가 볼린저 밴드 조건:
     - 직전 5개 확정봉 중 음봉의 종가가
       당시 볼린저 하단보다 낮은지 확인
     - 해당 캔들의 몸통 변동성이 기준 이상이면
       강한 하단 이탈로 판단하여 진입 금지
-    - 15m: 몸통 변동성 1.5% 이상
-    - 1h: 몸통 변동성 2% 이상
+    - 15m: 몸통 변동성 0.8% 이상
+    - 1h: 몸통 변동성 1.6% 이상
     """
 
-    df = get_confirmed_candles_with_rsi(symbol, timeframe)
+    # =================================================
+    # 데이터 조회
+    # =================================================
+    df = get_confirmed_candles_with_rsi(
+        symbol,
+        timeframe
+    )
 
-    # 30 봉 기준까지 보려면 최소 35 개 이상 필요
+    # 30 봉 기준까지 보려면 최소 35개 이상 필요
     if df is None or len(df) < 35:
         return None
 
+    # =================================================
     # 직전 확정봉
+    # =================================================
+    # 현재 진행 중인 봉은 데이터 함수에서 제거되므로
+    # df.iloc[-1]은 가장 최근 확정봉
     prev_candle = df.iloc[-1]
 
-    # -------------------------
+    # =================================================
     # 기준 구간
-    # -------------------------
+    # =================================================
+
+    # -------------------------------------------------
+    # 15 봉 기준 구간
+    # -------------------------------------------------
     # 직전봉을 제외한 최근 기준 구간
+    # -16부터 -2까지, 총 14개 봉
     base_15 = df.iloc[-16:-2]
 
     # 변동성 계산용 구간
+    # -17부터 -2까지, 총 16개 봉
     base_16 = df.iloc[-17:-1]
 
-    # 30 봉 기준 구간 직전봉을 제외한 최근 기준 구간
-    base_30 = df.iloc[-31:-2]
+    # -------------------------------------------------
+    # 30 봉 기준 구간
+    # -------------------------------------------------
+    # 직전봉 기준 16~30번째 전 구간
+    # -31부터 -17까지, 총 15개 봉
+    base_30 = df.iloc[-31:-16]
 
-    # range volatility 변동성 계산용 구간
+    # 30 봉 변동성 계산용 구간
+    # -32부터 -2까지, 총 30개 봉
     base_31 = df.iloc[-32:-1]
+
+    # 30 봉 추가 close 확인 구간
+    # -16부터 -2까지, 총 15개 봉
+    # -1인 직전봉은 제외
+    confirm_30 = df.iloc[-16:-1]
+
+    # =================================================
+    # 공통 조건
+    # =================================================
 
     # 공통 조건: 직전봉 음봉
     cond_bearish_candle = (
@@ -2390,15 +2426,19 @@ def analyze_bullish_divergence_close(
     # =================================================
     # 볼린저 밴드 강한 하단 이탈 조건
     # =================================================
+
     # 직전봉 포함 최근 5개 확정봉
     last_5_candles = df.iloc[-5:]
 
     # 상승 다이버전스에서는 음봉만 확인
     bearish_last_5 = last_5_candles[
-        last_5_candles['open'] > last_5_candles['close']
+        last_5_candles['open']
+        > last_5_candles['close']
     ].copy()
 
+    # -------------------------------------------------
     # 타임프레임별 강한 하단 이탈 변동성 기준
+    # -------------------------------------------------
     if timeframe == '15m':
         bb_strong_volatility_threshold = 0.008
     elif timeframe == '1h':
@@ -2407,6 +2447,8 @@ def analyze_bullish_divergence_close(
         bb_strong_volatility_threshold = 0.016
 
     if not bearish_last_5.empty:
+
+        # 각 캔들의 몸통 변동성
         bearish_last_5['body_volatility'] = (
             abs(
                 bearish_last_5['close']
@@ -2415,7 +2457,8 @@ def analyze_bullish_divergence_close(
             / bearish_last_5['open']
         )
 
-        # 각 캔들의 종가가 해당 캔들의 당시 bb_lower보다 낮은지
+        # 각 캔들의 종가가
+        # 해당 캔들의 당시 bb_lower보다 낮은지 확인
         bearish_last_5['below_bb_lower'] = (
             bearish_last_5['close']
             < bearish_last_5['bb_lower']
@@ -2433,15 +2476,19 @@ def analyze_bullish_divergence_close(
         cond_strong_bb_lower_break = bool(
             strong_bb_lower_break.any()
         )
+
     else:
         cond_strong_bb_lower_break = False
 
     # 강한 하단 이탈이 있으면 진입 금지
-    cond_bollinger_filter = not cond_strong_bb_lower_break
+    cond_bollinger_filter = (
+        not cond_strong_bb_lower_break
+    )
 
     # =================================================
     # 15 봉 기준 - low 가격 기준
     # =================================================
+
     lowest_low_15 = base_15['low'].min()
 
     # -------------------------------------------------
@@ -2459,22 +2506,44 @@ def analyze_bullish_divergence_close(
     # 음봉들 중 최저 RSI
     lowest_rsi_15 = bearish_candles_15['rsi'].min()
 
+    # -------------------------------------------------
+    # 15 봉 변동성 계산
+    # -------------------------------------------------
     range_high_15 = base_16['close'].max()
     range_low_15 = base_16['close'].min()
+
+    if range_high_15 == 0:
+        return None
+
     range_volatility_15 = (
-        (range_high_15 - range_low_15) / range_high_15
+        (range_high_15 - range_low_15)
+        / range_high_15
     )
 
+    # -------------------------------------------------
+    # 15 봉 low 기준 조건
+    # -------------------------------------------------
+
+    # 조건 1:
+    # 직전봉 저가가 기준 구간 최저 low보다
+    # 지정 비율 이상 낮아야 함
     cond_price_15 = (
         prev_candle['low']
-        < lowest_low_15 * (1 - price_diff_pct)
+        < lowest_low_15
+        * (1 - price_diff_pct)
     )
 
+    # 조건 2:
+    # 직전봉 RSI가 기준 음봉 최저 RSI보다
+    # 지정 비율 이상 높아야 함
     cond_rsi_15 = (
         prev_candle['rsi']
-        >= lowest_rsi_15 * (1 + rsi_raise_pct)
+        >= lowest_rsi_15
+        * (1 + rsi_raise_pct)
     )
 
+    # 조건 3:
+    # 직전봉 몸통 변동성
     cond_volatility_15 = (
         abs(
             prev_candle['close']
@@ -2484,6 +2553,7 @@ def analyze_bullish_divergence_close(
         >= min_volatility
     )
 
+    # 15 봉 low 기준 최종 신호
     signal_15 = (
         cond_price_15
         and cond_rsi_15
@@ -2495,29 +2565,35 @@ def analyze_bullish_divergence_close(
     # =================================================
     # 15 봉 기준 - close 가격 기준 추가 조건
     # =================================================
+
     lowest_close_15_2 = base_15['close'].min()
 
-    # ✅ 타임프레임별로 price_diff_pct_15_2 자동 설정
+    # -------------------------------------------------
+    # 타임프레임별 close 가격 차이 기준
+    # -------------------------------------------------
     if timeframe == '15m':
         price_diff_pct_15_2 = 0.002
     elif timeframe == '1h':
         price_diff_pct_15_2 = 0.003
     else:
-        price_diff_pct_15_2 = 0.002  # 기본값
+        price_diff_pct_15_2 = 0.002
 
     # close 기준 가격 조건:
-    # 직전봉 종가가 과거 15 봉 최저 종가보다 X% 이상 낮아야 함
+    # 직전봉 종가가 과거 15 봉 최저 종가보다
+    # 타임프레임별 기준 이상 낮아야 함
     cond_price_15_2 = (
         prev_candle['close']
-        < lowest_close_15_2 * (1 - price_diff_pct_15_2)
+        < lowest_close_15_2
+        * (1 - price_diff_pct_15_2)
     )
 
     # close 기준 변동성 조건:
-    # range_volatility 가 0.3% 이상이어야 함
+    # range_volatility가 0.3% 이상이어야 함
     cond_range_volatility_15_2 = (
         range_volatility_15 >= 0.003
     )
 
+    # 15 봉 close 기준 최종 신호
     signal_15_2 = (
         cond_price_15_2
         and cond_range_volatility_15_2
@@ -2530,6 +2606,7 @@ def analyze_bullish_divergence_close(
     # =================================================
     # 30 봉 기준
     # =================================================
+
     lowest_low_30 = base_30['low'].min()
 
     # -------------------------------------------------
@@ -2547,22 +2624,69 @@ def analyze_bullish_divergence_close(
     # 음봉들 중 최저 RSI
     lowest_rsi_30 = bearish_candles_30['rsi'].min()
 
+    # -------------------------------------------------
+    # confirm_30 중 음봉만 필터링
+    # -------------------------------------------------
+    bearish_confirm_30 = confirm_30[
+        confirm_30['open'] > confirm_30['close']
+    ]
+
+    # 추가 확인 구간에 음봉이 없으면
+    # lowest close 계산 불가
+    if bearish_confirm_30.empty:
+        return None
+
+    # 추가 확인 구간 음봉 중 최저 종가
+    lowest_bearish_close_30_confirm = (
+        bearish_confirm_30['close'].min()
+    )
+
+    # -------------------------------------------------
+    # 30 봉 변동성 계산
+    # -------------------------------------------------
     range_high_30 = base_31['close'].max()
     range_low_30 = base_31['close'].min()
+
+    if range_high_30 == 0:
+        return None
+
     range_volatility_30 = (
-        (range_high_30 - range_low_30) / range_high_30
+        (range_high_30 - range_low_30)
+        / range_high_30
     )
 
+    # -------------------------------------------------
+    # 30 봉 조건
+    # -------------------------------------------------
+
+    # 기존 30 봉 low 기준 조건:
+    # 직전봉 종가가 30 봉 기준 최저 low보다
+    # 지정 비율 이상 낮아야 함
     cond_price_30 = (
         prev_candle['close']
-        < lowest_low_30 * (1 - price_diff_pct_30)
+        < lowest_low_30
+        * (1 - price_diff_pct_30)
     )
 
+    # 추가 조건:
+    # confirm_30 범위 안의 음봉 lowest close보다
+    # 직전봉 close가 0.2% 이상 낮아야 함
+    cond_price_30_confirm = (
+        prev_candle['close']
+        < lowest_bearish_close_30_confirm
+        * (1 - 0.002)
+    )
+
+    # RSI 조건:
+    # 직전봉 RSI가 30 봉 기준 음봉 최저 RSI보다
+    # 지정 비율 이상 높아야 함
     cond_rsi_30 = (
         prev_candle['rsi']
-        >= lowest_rsi_30 * (1 + rsi_raise_pct_30)
+        >= lowest_rsi_30
+        * (1 + rsi_raise_pct_30)
     )
 
+    # 직전봉 몸통 변동성 조건
     cond_volatility_30 = (
         abs(
             prev_candle['close']
@@ -2572,28 +2696,48 @@ def analyze_bullish_divergence_close(
         >= min_volatility_30
     )
 
+    # 30 봉 최종 신호
+    # 현재 코드는 30 봉에도 볼린저 필터 적용
     signal_30 = (
         cond_price_30
+        and cond_price_30_confirm
         and cond_rsi_30
         and cond_volatility_30
         and cond_bearish_candle
-        and cond_bollinger_filter  # 30봉은 볼린저 안보게 하고싶은데, 이미 길게 나왔으니 근데 그럼 15봉에서 걸러낸게 의미가 없는데,,
+        # and cond_bollinger_filter 30봉은 볼린저 조건 제외
     )
 
-    # 15 봉 low 기준 또는 15 봉 close 기준 또는 30 봉 기준
-    signal = signal_15 or signal_15_2 or signal_30
+    # =================================================
+    # 최종 신호
+    # =================================================
+
+    # 15 봉 low 기준 또는
+    # 15 봉 close 기준 또는
+    # 30 봉 기준 중 하나라도 충족
+    signal = (
+        signal_15
+        or signal_15_2
+        or signal_30
+    )
 
     # =================================================
     # range_volatility 결정
     # =================================================
-    # signal_15 또는 signal_15_2 가 True 면 range_volatility_15 사용
-    # signal_30 만 True 면 range_volatility_30 사용
+
+    # 15 봉 신호가 True이면 15 봉 변동성 사용
     if signal_15 or signal_15_2:
         range_volatility = range_volatility_15
+
+    # 30 봉 신호만 True이면 30 봉 변동성 사용
     elif signal_30:
         range_volatility = range_volatility_30
+
     else:
         range_volatility = None
+
+    # =================================================
+    # 결과 반환
+    # =================================================
 
     return {
         "signal": signal,
@@ -2606,40 +2750,89 @@ def analyze_bullish_divergence_close(
             else None
         ),
 
+        # -------------------------------------------------
         # 볼린저 필터 정보
-        "bollinger_filter": cond_bollinger_filter,
-        "strong_bb_lower_break": cond_strong_bb_lower_break,
+        # -------------------------------------------------
+        "bollinger_filter": (
+            cond_bollinger_filter
+        ),
+        "strong_bb_lower_break": (
+            cond_strong_bb_lower_break
+        ),
         "bb_strong_volatility_threshold": (
-            float(bb_strong_volatility_threshold)
+            float(
+                bb_strong_volatility_threshold
+            )
         ),
 
+        # -------------------------------------------------
+        # 공통 직전봉 조건
+        # -------------------------------------------------
+        "bearish_candle_condition": (
+            cond_bearish_candle
+        ),
+
+        # -------------------------------------------------
         # 15 봉 low 기준 정보
+        # -------------------------------------------------
         "lowest_low_15": float(lowest_low_15),
         "lowest_rsi_15": float(lowest_rsi_15),
         "price_condition_15": cond_price_15,
         "rsi_condition_15": cond_rsi_15,
-        "volatility_condition_15": cond_volatility_15,
-        "range_volatility_15": float(range_volatility_15),
+        "volatility_condition_15": (
+            cond_volatility_15
+        ),
+        "range_volatility_15": (
+            float(range_volatility_15)
+        ),
         "signal_15": signal_15,
 
+        # -------------------------------------------------
         # 15 봉 close 기준 추가 정보
-        "lowest_close_15_2": float(lowest_close_15_2),
-        "price_condition_15_2": cond_price_15_2,
+        # -------------------------------------------------
+        "lowest_close_15_2": (
+            float(lowest_close_15_2)
+        ),
+        "price_diff_pct_15_2": (
+            float(price_diff_pct_15_2)
+        ),
+        "price_condition_15_2": (
+            cond_price_15_2
+        ),
         "range_volatility_condition_15_2": (
             cond_range_volatility_15_2
         ),
         "signal_15_2": signal_15_2,
 
+        # -------------------------------------------------
         # 30 봉 기준 정보
+        # -------------------------------------------------
         "lowest_low_30": float(lowest_low_30),
         "lowest_rsi_30": float(lowest_rsi_30),
         "price_condition_30": cond_price_30,
+
+        # 30 봉 추가 close 조건
+        "lowest_bearish_close_30_confirm": (
+            float(
+                lowest_bearish_close_30_confirm
+            )
+        ),
+        "price_condition_30_confirm": (
+            cond_price_30_confirm
+        ),
+
         "rsi_condition_30": cond_rsi_30,
-        "volatility_condition_30": cond_volatility_30,
-        "range_volatility_30": float(range_volatility_30),
+        "volatility_condition_30": (
+            cond_volatility_30
+        ),
+        "range_volatility_30": (
+            float(range_volatility_30)
+        ),
         "signal_30": signal_30,
 
+        # -------------------------------------------------
         # 공통 직전봉 정보
+        # -------------------------------------------------
         "prev_open": float(prev_candle['open']),
         "prev_close": float(prev_candle['close']),
         "prev_rsi": float(prev_candle['rsi']),
@@ -3133,56 +3326,59 @@ def analyze_bullish_divergence_pistol(
 
     기준 구간:
     - base_12 = df.iloc[-13:-7]
-      직전봉 기준 7번째 전 ~ 12번째 전, 총 6개 봉
+      직전봉 기준 7~12번째 전, 총 6개 봉
     - base_25 = df.iloc[-26:-13]
-      직전봉 기준 13번째 전 ~ 25번째 전, 총 13개 봉
+      직전봉 기준 13~25번째 전, 총 13개 봉
+
+    추가 가격 확인 구간:
+    - confirm_12 = df.iloc[-7:-2]
+    - confirm_25 = df.iloc[-12:-2]
 
     가격 조건:
-    - 직전봉 close가 각 기준 구간 양봉들의 highest close보다
-      0.1% 이상 높아야 함
-
-    RSI 조건:
-    - 1범위: prev RSI < highest RSI * 1.03
-    - 2범위: prev RSI <= highest RSI * 0.995
-
-    변동성 조건:
-    - 1범위:
-      body volatility >= 0.8%
-      그리고 종가가 당시 bb_upper를 돌파
-      또는 body volatility >= 1.6%
-    - 2범위:
-      body volatility >= 0.5%
-
-    최종 신호:
-    - 1범위 조건 또는 2범위 조건 중 하나라도 만족하면 True
+    - 직전봉 close가 기준 구간의 양봉 최고 close보다
+      price_diff_pct 이상 높아야 함
+    - 동시에 추가 확인 구간의 양봉 최고 close보다도
+      price_diff_pct 이상 높아야 함
     """
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    # bb 계산과 25번째 기준 구간 사용에 필요한 최소 데이터
+    # base_25가 -26부터 필요하므로 최소 26개 필요
     if df is None or len(df) < 26:
         return None
 
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
-    # 직전봉은 양봉이어야 함
+    # 직전봉은 양봉
     cond_bullish_candle = (
         prev_candle['open'] < prev_candle['close']
     )
 
-    # -------------------------------------------------
+    # =================================================
     # 기준 구간
-    # -------------------------------------------------
-    # 직전봉 기준 7~12번째 전, 총 6개 봉
+    # =================================================
+
+    # 직전봉 기준 7~12번째 전, 총 6개
     base_12 = df.iloc[-13:-7]
 
-    # 직전봉 기준 13~25번째 전, 총 13개 봉
+    # 직전봉 기준 13~25번째 전, 총 13개
     base_25 = df.iloc[-26:-13]
 
     # =================================================
-    # 1범위: 직전 7~12개 전 구간
+    # 추가 가격 확인 구간
     # =================================================
+
+    # -7부터 -2까지, 총 7개
+    confirm_12 = df.iloc[-7:-1] # -7, -6, -5, -4, -3, -2
+
+    # -12부터 -2까지, 총 11개
+    confirm_25 = df.iloc[-12:-1] # -12, -11, -10, -9, -8, -7, -6, -5, -4, -3,-2
+
+    # =================================================
+    # 1범위: base_12
+    # =================================================
+
     bullish_candles_12 = base_12[
         base_12['open'] < base_12['close']
     ]
@@ -3193,14 +3389,38 @@ def analyze_bullish_divergence_pistol(
     highest_close_12 = bullish_candles_12['close'].max()
     highest_rsi_12 = bullish_candles_12['rsi'].max()
 
-    # 1범위 가격 조건
-    cond_price_12 = (
+    # 추가 확인 구간의 양봉
+    bullish_confirm_12 = confirm_12[
+        confirm_12['open'] < confirm_12['close']
+    ]
+
+    if bullish_confirm_12.empty:
+        return None
+
+    highest_confirm_close_12 = (
+        bullish_confirm_12['close'].max()
+    )
+
+    # 기존 base_12 최고 종가 돌파
+    cond_price_12_base = (
         prev_candle['close']
         >= highest_close_12 * (1 + price_diff_pct)
     )
 
+    # 추가 confirm_12 최고 종가도 돌파
+    cond_price_12_confirm = (
+        prev_candle['close']
+        >= highest_confirm_close_12
+        * (1 + price_diff_pct)
+    )
+
+    # 두 가격 조건 모두 만족해야 함
+    cond_price_12 = (
+        cond_price_12_base
+        and cond_price_12_confirm
+    )
+
     # 1범위 RSI 조건
-    # 직전 RSI가 과거 최고 RSI * 1.03보다 낮아야 함
     cond_rsi_12 = (
         prev_candle['rsi']
         < highest_rsi_12 * rsi_limit_1
@@ -3215,14 +3435,14 @@ def analyze_bullish_divergence_pistol(
         / prev_candle['open']
     )
 
-    # 1범위 변동성 조건
+    # 1범위 변동성:
     # 0.8% 이상이면서 BB 상단 종가 돌파
     cond_volatility_12_bb = (
         prev_body_volatility >= volatility_1
         and prev_candle['close'] > prev_candle['bb_upper']
     )
 
-    # 또는 몸통 변동성이 1.6% 이상
+    # 또는 직전봉 몸통 변동성 1.6% 이상
     cond_volatility_12_strong = (
         prev_body_volatility >= volatility_1_strong
     )
@@ -3232,7 +3452,6 @@ def analyze_bullish_divergence_pistol(
         or cond_volatility_12_strong
     )
 
-    # 1범위 최종 신호
     signal_12 = (
         cond_bullish_candle
         and cond_price_12
@@ -3241,8 +3460,9 @@ def analyze_bullish_divergence_pistol(
     )
 
     # =================================================
-    # 2범위: 직전 13~25개 전 구간
+    # 2범위: base_25
     # =================================================
+
     bullish_candles_25 = base_25[
         base_25['open'] < base_25['close']
     ]
@@ -3253,25 +3473,48 @@ def analyze_bullish_divergence_pistol(
     highest_close_25 = bullish_candles_25['close'].max()
     highest_rsi_25 = bullish_candles_25['rsi'].max()
 
-    # 2범위 가격 조건
-    cond_price_25 = (
+    # 추가 확인 구간의 양봉
+    bullish_confirm_25 = confirm_25[
+        confirm_25['open'] < confirm_25['close']
+    ]
+
+    if bullish_confirm_25.empty:
+        return None
+
+    highest_confirm_close_25 = (
+        bullish_confirm_25['close'].max()
+    )
+
+    # 기존 base_25 최고 종가 돌파
+    cond_price_25_base = (
         prev_candle['close']
         >= highest_close_25 * (1 + price_diff_pct)
     )
 
+    # 추가 confirm_25 최고 종가도 돌파
+    cond_price_25_confirm = (
+        prev_candle['close']
+        >= highest_confirm_close_25
+        * (1 + price_diff_pct)
+    )
+
+    # 두 가격 조건 모두 만족해야 함
+    cond_price_25 = (
+        cond_price_25_base
+        and cond_price_25_confirm
+    )
+
     # 2범위 RSI 조건
-    # 직전 RSI가 과거 최고 RSI * 0.995 이하
     cond_rsi_25 = (
         prev_candle['rsi']
         <= highest_rsi_25 * rsi_limit_2
     )
 
-    # 2범위 변동성 조건
+    # 2범위 변동성
     cond_volatility_25 = (
         prev_body_volatility >= volatility_2
     )
 
-    # 2범위 최종 신호
     signal_25 = (
         cond_bullish_candle
         and cond_price_25
@@ -3279,10 +3522,12 @@ def analyze_bullish_divergence_pistol(
         and cond_volatility_25
     )
 
-    # 1범위 또는 2범위 충족
+    # =================================================
+    # 최종 신호
+    # =================================================
+
     signal = signal_12 or signal_25
 
-    # 어떤 범위에서 신호가 발생했는지 구분
     if signal_12:
         signal_range = "range_12"
     elif signal_25:
@@ -3290,7 +3535,7 @@ def analyze_bullish_divergence_pistol(
     else:
         signal_range = None
 
-    # 신호 범위에 따른 range volatility
+    # 신호 범위 기준 변동성
     if signal_12:
         range_high = base_12['close'].max()
         range_low = base_12['close'].min()
@@ -3314,24 +3559,36 @@ def analyze_bullish_divergence_pistol(
         "side": "long",
         "signal_range": signal_range,
 
-        # 구간별 신호
+        # 최종 조건
+        "bullish_candle_condition": (
+            cond_bullish_candle
+        ),
+        "prev_body_volatility": float(
+            prev_body_volatility
+        ),
+
+        # 1범위 정보
         "signal_12": signal_12,
-        "signal_25": signal_25,
-
-        # 구간별 캔들 수
-        "bullish_candle_count_12": int(
-            len(bullish_candles_12)
+        "highest_close_12": float(
+            highest_close_12
         ),
-        "bullish_candle_count_25": int(
-            len(bullish_candles_25)
+        "highest_rsi_12": float(
+            highest_rsi_12
         ),
-
-        # 1범위 기준값
-        "highest_close_12": float(highest_close_12),
-        "highest_rsi_12": float(highest_rsi_12),
+        "highest_confirm_close_12": float(
+            highest_confirm_close_12
+        ),
+        "price_condition_12_base": (
+            cond_price_12_base
+        ),
+        "price_condition_12_confirm": (
+            cond_price_12_confirm
+        ),
         "price_condition_12": cond_price_12,
         "rsi_condition_12": cond_rsi_12,
-        "volatility_condition_12": cond_volatility_12,
+        "volatility_condition_12": (
+            cond_volatility_12
+        ),
         "volatility_12_bb_condition": (
             cond_volatility_12_bb
         ),
@@ -3339,30 +3596,42 @@ def analyze_bullish_divergence_pistol(
             cond_volatility_12_strong
         ),
 
-        # 2범위 기준값
-        "highest_close_25": float(highest_close_25),
-        "highest_rsi_25": float(highest_rsi_25),
+        # 2범위 정보
+        "signal_25": signal_25,
+        "highest_close_25": float(
+            highest_close_25
+        ),
+        "highest_rsi_25": float(
+            highest_rsi_25
+        ),
+        "highest_confirm_close_25": float(
+            highest_confirm_close_25
+        ),
+        "price_condition_25_base": (
+            cond_price_25_base
+        ),
+        "price_condition_25_confirm": (
+            cond_price_25_confirm
+        ),
         "price_condition_25": cond_price_25,
         "rsi_condition_25": cond_rsi_25,
-        "volatility_condition_25": cond_volatility_25,
-
-        # 공통 직전봉 정보
-        "bullish_candle_condition": (
-            cond_bullish_candle
+        "volatility_condition_25": (
+            cond_volatility_25
         ),
-        "prev_open": float(prev_candle['open']),
-        "prev_close": float(prev_candle['close']),
-        "prev_rsi": float(prev_candle['rsi']),
-        "prev_body_volatility": float(
-            prev_body_volatility
-        ),
-        "prev_bb_upper": float(prev_candle['bb_upper']),
 
-        # 범위 변동성
+        # 변동성
         "range_volatility": (
             float(range_volatility)
             if range_volatility is not None
             else None
+        ),
+
+        # 직전봉
+        "prev_open": float(prev_candle['open']),
+        "prev_close": float(prev_candle['close']),
+        "prev_rsi": float(prev_candle['rsi']),
+        "prev_bb_upper": float(
+            prev_candle['bb_upper']
         ),
 
         # TP 기준
