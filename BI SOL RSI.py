@@ -3343,8 +3343,8 @@ def analyze_bullish_divergence_pistol(
 
     df = get_confirmed_candles_with_rsi(symbol, timeframe)
 
-    # base_25가 -26부터 필요하므로 최소 26개 필요
-    if df is None or len(df) < 26:
+    # base_25가 -26부터 필요하므로 최소 26개 필요 -> 30개로 수정
+    if df is None or len(df) < 31:
         return None
 
     # 직전 확정봉
@@ -3362,8 +3362,8 @@ def analyze_bullish_divergence_pistol(
     # 직전봉 기준 7~12번째 전, 총 6개
     base_12 = df.iloc[-13:-7]
 
-    # 직전봉 기준 13~25번째 전, 총 13개
-    base_25 = df.iloc[-26:-13]
+    # 직전봉 기준 13~30번째 전, 총 17개
+    base_25 = df.iloc[-31:-13]
 
     # =================================================
     # 추가 가격 확인 구간
