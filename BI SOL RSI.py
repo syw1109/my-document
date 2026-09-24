@@ -2412,7 +2412,7 @@ def analyze_bullish_divergence_close(
     # 30 봉 추가 close 확인 구간
     # -16부터 -2까지, 총 15개 봉
     # -1인 직전봉은 제외
-    confirm_30 = df.iloc[-16:-1]
+    confirm_30 = df.iloc[-16:-2]
 
     # =================================================
     # 공통 조건
