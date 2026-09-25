@@ -3309,7 +3309,7 @@ def trade_rsi_close_strategy(
 def analyze_bullish_divergence_pistol(
     symbol,
     timeframe,
-    price_diff_pct=0.001,
+    price_diff_pct=0.001,  # 전략함수에서도 수정필요
     rsi_limit_1=1.03,
     rsi_limit_2=0.985,
     volatility_1=0.0084, # 13범위 볼린저 상단 터치시 기준
@@ -3974,12 +3974,12 @@ def trade_rsi_pistol_strategy(
         analyze_bullish_divergence_pistol(
             symbol=symbol,
             timeframe=timeframe,
-            price_diff_pct=0.0005,
+            price_diff_pct=0.001,  # 전략함수에서도 수정필요
             rsi_limit_1=1.03,
-            rsi_limit_2=0.995,
-            volatility_1=0.008,
-            volatility_1_strong=0.016,
-            volatility_2=0.005
+            rsi_limit_2=0.985,
+            volatility_1=0.0084, # 13범위 볼린저 상단 터치시 기준
+            volatility_1_strong=0.016, # 13범위 볼린저 상단 터치안할 시 기준
+            volatility_2=0.006 # 30~14범위 상승 변동성                      
         )
     )
 
@@ -4068,9 +4068,9 @@ def trade_rsi_pistol_strategy(
         bull_pistol["prev_body_volatility"]
         >= 0.015
     ):
-        sl_pct = 0.016
-    else:
         sl_pct = 0.007
+    else:
+        sl_pct = 0.0068
 
     tp_price = (
         bull_pistol["prev_close"]
