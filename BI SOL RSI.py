@@ -3311,10 +3311,10 @@ def analyze_bullish_divergence_pistol(
     timeframe,
     price_diff_pct=0.001,
     rsi_limit_1=1.03,
-    rsi_limit_2=0.995,
-    volatility_1=0.008,
-    volatility_1_strong=0.016,
-    volatility_2=0.005
+    rsi_limit_2=0.985,
+    volatility_1=0.0084, # 13범위 볼린저 상단 터치시 기준
+    volatility_1_strong=0.016, # 13범위 볼린저 상단 터치안할 시 기준
+    volatility_2=0.006 # 30~14범위 상승 변동성
 ):
     """
     롱 전용 close 기준 RSI 다이버전스 판단 함수.
