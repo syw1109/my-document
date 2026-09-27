@@ -101,6 +101,7 @@ import ccxt
 import pyupbit
 import pandas as pd
 import numpy as np
+import math
 from datetime import timezone, timedelta
 
 
@@ -109,9 +110,11 @@ from datetime import timezone, timedelta
 KST = timezone(timedelta(hours=9))
 SOL_SYMBOL = 'SOL/USDT'
 BTC_SYMBOL = 'BTC/USDT'
+DOGE_SYMBOL = 'DOGE/USDT'
 UPBIT_TICKER = 'KRW-SOL'
 MARKET_ID_SOL = 'SOLUSDT'
 MARKET_ID_BTC = 'BTCUSDT'
+MARKET_ID_DOGE = 'DOGEUSDT'
 LEVERAGE = 10
 
 # 바이낸스 선물 거래소 연결
@@ -206,6 +209,474 @@ def place_sl_short(symbol, sl_price):
     }
     return exchange.create_order(symbol, 'STOP_MARKET', 'buy', None, None, params)
 
+# close 주문 함수 도지 기반으로 손절 청산 주문 넣는 목적
+def close_position_market(
+    symbol,
+    market_id
+):
+    """
+    현재 포지션을 시장가로 청산합니다.
+
+    - 롱 포지션: 시장가 매도
+    - 숏 포지션: 시장가 매수
+    """
+
+    position_amount = (
+        get_position_amount(symbol)
+    )
+
+    if position_amount == 0:
+        print(
+            f"[{symbol}] "
+            "청산할 포지션이 없습니다."
+        )
+        return None
+
+    amount = abs(position_amount)
+
+    if position_amount > 0:
+        order = (
+            exchange.create_market_sell_order(
+                symbol,
+                amount
+            )
+        )
+        side = "sell"
+
+    else:
+        order = (
+            exchange.create_market_buy_order(
+                symbol,
+                amount
+            )
+        )
+        side = "buy"
+
+    print(
+        f"[{symbol}] "
+        f"시장가 청산 완료 | "
+        f"side={side} | "
+        f"amount={amount}"
+    )
+
+    return order
+
+# doge 수량 계산
+def calculate_doge_amount_from_sl(
+    entry_price,
+    side,
+    sl_pct
+):
+    """
+    SOL 진입 기준가와 방향에 따라
+    DOGE 매수 수량을 계산합니다.
+
+    롱:
+    - entry_price * (1 - sl_pct)
+    - 손절 기준가를 소수 첫째 자리까지 버림
+    - 기준가 * 10 = DOGE 수량
+
+    숏:
+    - entry_price * (1 + sl_pct)
+    - 손절 기준가를 소수 첫째 자리까지 올림
+    - 기준가 * 10 = DOGE 수량
+    """
+
+    if entry_price <= 0:
+        raise ValueError(
+            "entry_price는 0보다 커야 합니다."
+        )
+
+    if sl_pct <= 0:
+        raise ValueError(
+            "sl_pct는 0보다 커야 합니다."
+        )
+
+    if side == 'long':
+
+        raw_sl_price = (
+            entry_price
+            * (1 - sl_pct)
+        )
+
+        # 소수 첫째 자리까지 버림
+        sl_reference_price = (
+            math.floor(
+                raw_sl_price * 10
+            ) / 10
+        )
+
+    elif side == 'short':
+
+        raw_sl_price = (
+            entry_price
+            * (1 + sl_pct)
+        )
+
+        # 소수 첫째 자리까지 올림
+        sl_reference_price = (
+            math.ceil(
+                raw_sl_price * 10
+            ) / 10
+        )
+
+    else:
+        raise ValueError(
+            "side는 'long' 또는 'short'여야 합니다."
+        )
+
+    # 예: 기준가 123.4 → DOGE 1234개
+    doge_amount = int(
+        round(sl_reference_price * 10)
+    )
+
+    return {
+        "raw_sl_price": raw_sl_price,
+        "sl_reference_price": (
+            sl_reference_price
+        ),
+        "doge_amount": doge_amount
+    }
+
+# 도지 매수 주문 함수    
+def buy_doge_for_sol_stop(doge_amount):
+    """
+    SOL 손절 기준가를 만들기 위한
+    DOGE 시장가 매수.
+
+    DOGE 레버리지:
+    - 5배
+    """
+
+    if doge_amount <= 0:
+        raise ValueError(
+            "DOGE 매수 수량이 0 이하입니다."
+        )
+
+    # DOGE도 5배 레버리지로 설정
+    exchange.load_markets()
+
+    try:
+        exchange.set_margin_mode(
+            'isolated',
+            DOGE_SYMBOL
+        )
+    except Exception as e:
+        print(
+            f"[DOGE STOP] "
+            f"격리 마진 설정 스킵: {e}"
+        )
+
+    exchange.set_leverage(
+        5,
+        DOGE_SYMBOL
+    )
+
+    # 거래소 수량 정밀도 적용
+    doge_amount = int(doge_amount)
+
+    doge_amount = float(
+        exchange.amount_to_precision(
+            DOGE_SYMBOL,
+            doge_amount
+        )
+    )
+
+    if doge_amount <= 0:
+        raise ValueError(
+            "정밀도 적용 후 DOGE 매수 수량이 0입니다."
+        )
+
+    order = exchange.create_market_buy_order(
+        DOGE_SYMBOL,
+        doge_amount
+    )
+
+    if not order:
+        raise RuntimeError(
+            "DOGE 매수 주문 응답이 없습니다."
+        )
+
+    print(
+        f"[DOGE STOP] "
+        f"DOGE 매수 완료 | "
+        f"amount={doge_amount} | "
+        f"leverage=5x"
+    )
+
+    return order   
+
+def manage_doge_based_sol_exit():
+    """
+    DOGE 수량에 따른 SOL 손절 관리 전략.
+
+    현재 진행 중인 SOL 5분봉을 사용합니다.
+
+    롱:
+    - 현재 진행 중인 5분봉 low가
+      DOGE 수량 / 10 기준가 이하로 내려가면 SOL 청산
+
+    숏:
+    - 현재 진행 중인 5분봉 high가
+      DOGE 수량 / 10 기준가 이상 올라가면 SOL 청산
+
+    공통:
+    - SOL 포지션이 없으면 DOGE도 청산
+    - DOGE 포지션이 없으면 손절 기준가를 계산하지 않음
+    - DOGE 기준가와 현재 SOL 가격 차이가 10% 이상이면
+      손절 감시를 중단
+    """
+
+    # =================================================
+    # SOL 및 DOGE 포지션 조회
+    # =================================================
+    sol_position = get_position_amount(
+        SOL_SYMBOL
+    )
+
+    doge_position = get_position_amount(
+        DOGE_SYMBOL
+    )
+
+    # =================================================
+    # SOL 포지션이 없으면 DOGE도 청산
+    # =================================================
+    if sol_position == 0:
+
+        if doge_position != 0:
+            print(
+                "[DOGE-SOL SL] "
+                "SOL 포지션이 없어서 DOGE 청산"
+            )
+
+            try:
+                close_position_market(
+                    DOGE_SYMBOL,
+                    MARKET_ID_DOGE
+                )
+
+            except Exception as e:
+                print(
+                    "[DOGE-SOL SL] "
+                    f"DOGE 청산 실패: {e}"
+                )
+
+        return
+
+    # =================================================
+    # DOGE 포지션이 없으면 기준가 계산 불가
+    # =================================================
+    if doge_position == 0:
+        print(
+            "[DOGE-SOL SL] "
+            "DOGE 포지션이 없어 "
+            "SOL 손절 기준가 계산 불가"
+        )
+        return
+
+    # =================================================
+    # 현재 진행 중인 SOL 5분봉 조회
+    # =================================================
+    try:
+        ohlcv = exchange.fetch_ohlcv(
+            SOL_SYMBOL,
+            timeframe='5m',
+            limit=1
+        )
+
+    except Exception as e:
+        print(
+            "[DOGE-SOL SL] "
+            f"SOL 현재 5분봉 조회 실패: {e}"
+        )
+        return
+
+    if ohlcv is None or len(ohlcv) == 0:
+        print(
+            "[DOGE-SOL SL] "
+            "SOL 5분봉 데이터가 없습니다."
+        )
+        return
+
+    # OHLCV:
+    # [timestamp, open, high, low, close, volume]
+    current_candle = ohlcv[-1]
+
+    current_candle_ts = current_candle[0]
+    current_candle_open = float(
+        current_candle[1]
+    )
+    current_candle_high = float(
+        current_candle[2]
+    )
+    current_candle_low = float(
+        current_candle[3]
+    )
+    current_candle_close = float(
+        current_candle[4]
+    )
+
+    # =================================================
+    # DOGE 수량 기준 SOL 손절가
+    # =================================================
+    doge_amount = abs(
+        doge_position
+    )
+
+    sol_stop_price = (
+        doge_amount / 10.0
+    )
+
+    # =================================================
+    # 현재 SOL 가격 조회
+    # =================================================
+    try:
+        current_sol_price = float(
+            exchange.fetch_ticker(
+                SOL_SYMBOL
+            )['last']
+        )
+
+    except Exception as e:
+        print(
+            "[DOGE-SOL SL] "
+            f"SOL 현재가 조회 실패: {e}"
+        )
+        return
+
+    if current_sol_price <= 0:
+        print(
+            "[DOGE-SOL SL] "
+            "SOL 현재가가 올바르지 않습니다."
+        )
+        return
+
+    # =================================================
+    # DOGE 기준가와 현재 SOL 가격 차이 계산
+    # =================================================
+    stop_price_deviation = (
+        abs(
+            current_sol_price
+            - sol_stop_price
+        )
+        / current_sol_price
+    )
+
+    print(
+        f"[DOGE-SOL SL] "
+        f"SOL position={sol_position} | "
+        f"DOGE amount={doge_amount} | "
+        f"stop={sol_stop_price:.1f} | "
+        f"current={current_sol_price:.4f} | "
+        f"deviation={stop_price_deviation * 100:.2f}% | "
+        f"5m ts={current_candle_ts} | "
+        f"O={current_candle_open:.4f} | "
+        f"H={current_candle_high:.4f} | "
+        f"L={current_candle_low:.4f} | "
+        f"C={current_candle_close:.4f}"
+    )
+
+    # =================================================
+    # 현재 SOL 가격과 DOGE 기준가 차이가 10% 이상이면
+    # 손절 감시 중단, 도지 잘못 샀을거 대비
+    # =================================================
+    if stop_price_deviation >= 0.10:
+        print(
+            "[DOGE-SOL SL] "
+            f"DOGE 기준가와 SOL 현재가 차이가 "
+            f"{stop_price_deviation * 100:.2f}%로 10% 이상 "
+            "→ 손절 감시 중단"
+        )
+        return
+
+    # =================================================
+    # 롱 포지션 손절
+    # =================================================
+    if sol_position > 0:
+
+        # 현재 진행 중인 5분봉 low가
+        # DOGE 기준 손절가 이하로 내려가면 청산
+        should_close_long = (
+            current_candle_low
+            <= sol_stop_price
+        )
+
+        if should_close_long:
+            print(
+                "[DOGE-SOL SL] "
+                "롱 손절 조건 충족 | "
+                f"5m low={current_candle_low:.4f} "
+                f"<= stop={sol_stop_price:.1f}"
+            )
+
+            try:
+                close_position_market(
+                    SOL_SYMBOL,
+                    MARKET_ID_SOL
+                )
+
+                # SOL 청산 후 DOGE 청산
+                time.sleep(1)
+
+                if get_position_amount(
+                    DOGE_SYMBOL
+                ) != 0:
+                    close_position_market(
+                        DOGE_SYMBOL,
+                        MARKET_ID_DOGE
+                    )
+
+            except Exception as e:
+                print(
+                    "[DOGE-SOL SL] "
+                    f"롱 청산 처리 실패: {e}"
+                )
+
+    # =================================================
+    # 숏 포지션 손절
+    # =================================================
+    elif sol_position < 0:
+
+        # 현재 진행 중인 5분봉 high가
+        # DOGE 기준 손절가 이상으로 올라가면 청산
+        should_close_short = (
+            current_candle_high
+            >= sol_stop_price
+        )
+
+        if should_close_short:
+            print(
+                "[DOGE-SOL SL] "
+                "숏 손절 조건 충족 | "
+                f"5m high={current_candle_high:.4f} "
+                f">= stop={sol_stop_price:.1f}"
+            )
+
+            try:
+                close_position_market(
+                    SOL_SYMBOL,
+                    MARKET_ID_SOL
+                )
+
+                # SOL 청산 후 DOGE 청산
+                time.sleep(1)
+
+                if get_position_amount(
+                    DOGE_SYMBOL
+                ) != 0:
+                    close_position_market(
+                        DOGE_SYMBOL,
+                        MARKET_ID_DOGE
+                    )
+
+            except Exception as e:
+                print(
+                    "[DOGE-SOL SL] "
+                    f"숏 청산 처리 실패: {e}"
+                )
+# doge 손절용    
+    
+
 def has_position(symbol_market_id):
     """지정한 심볼의 포지션 보유 여부 확인"""
     balance = exchange.fetch_balance(params={'type': 'future'})
@@ -215,7 +686,17 @@ def has_position(symbol_market_id):
             return True
     return False
 
-
+#------ 제약 파괴후 추매 룰
+# 코인 잔고 개수 불러오는 함수 
+def get_position_amount(symbol):
+    """특정 심볼의 포지션 수량 반환 (양수=롱, 음수=숏, 0=없음)"""
+    balance = exchange.fetch_balance(params={'type': 'future'})
+    positions = balance.get('info', {}).get('positions', [])
+    for p in positions:
+        if p.get('symbol') == symbol.replace('/', ''):
+            amt = float(p.get('positionAmt', 0))
+            return amt
+    return 0
 
 # ===================== 09:00 SOL 기존 전략 =====================
 
@@ -1009,6 +1490,7 @@ def trade_volume_breakout_strategy(
     else:
         place_tp_short(symbol, amount, tp_price)
         place_sl_short(symbol, sl_price)
+
     
     print(
         f"[{symbol} VOLUME_BREAKOUT] {('LONG' if is_yangbong else 'SHORT')} 진입 | "
@@ -2280,9 +2762,35 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_link_long_5m = time.time()    # ← 추가             
         
         place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        # 기존 sl_price 기준으로 DOGE 수량 계산
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=bull["prev_close"],
+            side='long',
+            sl_pct=sl_pct
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+        doge_reference_price = doge_stop_info["sl_reference_price"]
+
+        # DOGE 매수 실패 시 SOL 긴급 청산
+        try:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] DOGE 매수 실패: {e}")
+
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(symbol, market_id)
+
+            except Exception as close_error:
+                print(f"[{symbol} {timeframe}] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+            return
+
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | DOGE={doge_amount} | DOGE 기준가={doge_reference_price:.1f}")
         return
+
 
     # 숏 신호 처리
     if bear and bear["signal"]:
@@ -2321,8 +2829,33 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             last_link_short_5m = time.time()    # ← 추가            
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        # 기존 손절 주문 대체 sl_price 기준으로 DOGE 수량 계산
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=bear["prev_close"],
+            side='short',
+            sl_pct=sl_pct
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+        doge_reference_price = doge_stop_info["sl_reference_price"]
+
+        # DOGE 매수 실패 시 SOL 긴급 청산
+        try:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] DOGE 매수 실패: {e}")
+
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(symbol, market_id)
+
+            except Exception as close_error:
+                print(f"[{symbol} {timeframe}] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+            return
+
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price} | DOGE={doge_amount} | DOGE 기준가={doge_reference_price:.1f}")
         return
 
     print(f"[{symbol} {timeframe}] 진입 조건 없음")
@@ -3260,9 +3793,35 @@ def trade_rsi_close_strategy(
             last_link_long_5m = time.time()
 
         place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        # 기존 sl_price 기준으로 DOGE 수량 계산
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=bull_close["prev_close"],
+            side='long',
+            sl_pct=sl_pct
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+        doge_reference_price = doge_stop_info["sl_reference_price"]
+
+        # DOGE 매수 실패 시 SOL 긴급 청산
+        try:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] DOGE 매수 실패: {e}")
+
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(symbol, market_id)
+
+            except Exception as close_error:
+                print(f"[{symbol} {timeframe}] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+            return
+
+        print(f"[{symbol} {timeframe}] CLOSE 기준 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | DOGE={doge_amount} | DOGE 기준가={doge_reference_price:.1f}")
         return
+
 
     # 숏 처리  # ma18 상승, 업비트 진입 손절 타점에서 진입 금지룰 어짜피 손절 0.6%두니깐 그냥 돌리자
     if bear_close and bear_close["signal"]:
@@ -3297,12 +3856,34 @@ def trade_rsi_close_strategy(
             last_link_short_5m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price}")
+        # 기존 sl_price 기준으로 DOGE 수량 계산
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=bear_close["prev_close"],
+            side='short',
+            sl_pct=sl_pct
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+        doge_reference_price = doge_stop_info["sl_reference_price"]
+
+        # DOGE 매수 실패 시 SOL 긴급 청산
+        try:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] DOGE 매수 실패: {e}")
+
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(symbol, market_id)
+
+            except Exception as close_error:
+                print(f"[{symbol} {timeframe}] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+            return
+
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price} | DOGE={doge_amount} | DOGE 기준가={doge_reference_price:.1f}")
         return
-
-    print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
-
 #1 rsi close 전략
 
 #13 rsi pistol 전략
@@ -4112,10 +4693,31 @@ def trade_rsi_pistol_strategy(
         tp_price
     )
 
-    place_sl_long(
-        symbol,
-        sl_price
+    # SOL 진입 기준가로 DOGE 손절 기준 수량 계산
+    doge_stop_info = calculate_doge_amount_from_sl(
+        entry_price=bull_pistol["prev_close"],
+        side='long',
+        sl_pct=sl_pct
     )
+
+    doge_amount = doge_stop_info["doge_amount"]
+    doge_reference_price = doge_stop_info["sl_reference_price"]
+
+    # DOGE 매수 실패 시 SOL 긴급 청산
+    try:
+        buy_doge_for_sol_stop(doge_amount)
+
+    except Exception as e:
+        print(f"[{symbol} {timeframe} RSI_PISTOL] DOGE 매수 실패: {e}")
+
+        try:
+            if get_position_amount(symbol) != 0:
+                close_position_market(symbol, market_id)
+
+        except Exception as close_error:
+            print(f"[{symbol} {timeframe} RSI_PISTOL] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+        return
 
     print(
         f"[{symbol} {timeframe} RSI_PISTOL] "
@@ -4123,7 +4725,8 @@ def trade_rsi_pistol_strategy(
         f"amount={amount} | "
         f"price={current_price} | "
         f"tp={tp_price} | "
-        f"sl={sl_price} | "
+        f"DOGE={doge_amount} | "
+        f"DOGE 기준가={doge_reference_price:.1f} | "
         f"sl_pct={sl_pct * 100:.2f}%"
     )
 
@@ -4750,8 +5353,8 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
 
        
     # DOGE 보유 수량을 가져옵니다. 세 번째 동적 매물대 계산용. DOGE 보유 수량이 있으면 수량 / 10 값을 레벨
-    doge_position = get_position_amount('DOGE/USDT')
-    doge_level = abs(doge_position) / 10.0 if doge_position > 0 else None
+    # doge_position = get_position_amount('DOGE/USDT')
+    # doge_level = abs(doge_position) / 10.0 if doge_position > 0 else None
      
      
     # # 직전봉 몸통 범위 안에 ma50 또는 vwma100 이 들어오는지 확인,   
@@ -4777,14 +5380,15 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
 
     
     # DOGE 레벨이 있을 때만 아래 조건
-    cond_touch_doge = False
-    if doge_level is not None:
-        cond_touch_doge = (
-            (lower <= doge_level <= upper) or
-            (prev['close'] == doge_level)
-        )
+    # cond_touch_doge = False
+    # if doge_level is not None:
+    #     cond_touch_doge = (
+    #         (lower <= doge_level <= upper) or
+    #         (prev['close'] == doge_level)
+    #     )
     # 이평선 터치 또는 DOGE 매물대 터치 중 하나라도 만족하면 통과
-    cond_touch = cond_touch_ma or cond_touch_doge
+    # cond_touch = cond_touch_ma or cond_touch_doge
+    cond_touch = cond_touch_ma
 
     # ✅ 추가 조건: 2 번째 이전봉, 3 번째 이전봉의 시가가 각각의 MA50 또는 VWMA100 보다 위에 있어야 함
     cond_prev2_open_above = (
@@ -5491,8 +6095,42 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
     # TP/SL 설정
     place_tp_long('SOL/USDT', amount, tp_price)
-    place_sl_long('SOL/USDT', sl_price)
-    print(f"[{symbol} 50MA_CLOSE] TP/SL 설정 완료")
+    # 진입가 기준으로 DOGE 손절 기준 수량 계산
+    doge_stop_info = calculate_doge_amount_from_sl(
+        entry_price=entry_price,
+        side='long',
+        sl_pct=0.007
+    )
+
+    doge_amount = doge_stop_info["doge_amount"]
+    doge_reference_price = doge_stop_info["sl_reference_price"]
+
+    # DOGE 매수 실패 시 SOL 긴급 청산
+    try:
+        buy_doge_for_sol_stop(doge_amount)
+
+    except Exception as e:
+        print(f"[{symbol} 50MA_CLOSE] DOGE 매수 실패: {e}")
+
+        try:
+            if get_position_amount('SOL/USDT') != 0:
+                close_position_market(
+                    'SOL/USDT',
+                    market_id
+                )
+
+        except Exception as close_error:
+            print(f"[{symbol} 50MA_CLOSE] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+        return
+
+    print(
+        f"[{symbol} 50MA_CLOSE] "
+        f"TP 설정 및 DOGE 손절 기준 설정 완료 | "
+        f"tp={tp_price} | "
+        f"DOGE={doge_amount} | "
+        f"DOGE 기준가={doge_reference_price:.1f}"
+    )
 
 
     print(
@@ -5731,12 +6369,46 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
         last_shib_1h = time.time()
     
     # SL 설정 (TP 제거)
-    place_sl_long('SOL/USDT', amount, sl_price)
-    print(f"[{symbol} SHIB] SL 설정 완료 (TP 없음)")
-    
+    # SL 설정 대신 DOGE 매수
+    doge_stop_info = calculate_doge_amount_from_sl(
+        entry_price=current_price,
+        side='long',
+        sl_pct=0.01
+    )
+
+    doge_amount = doge_stop_info["doge_amount"]
+    doge_reference_price = doge_stop_info["sl_reference_price"]
+
+    # DOGE 매수 실패 시 SOL 긴급 청산
+    try:
+        buy_doge_for_sol_stop(doge_amount)
+
+    except Exception as e:
+        print(f"[{symbol} SHIB] DOGE 매수 실패: {e}")
+
+        try:
+            if get_position_amount('SOL/USDT') != 0:
+                close_position_market(
+                    'SOL/USDT',
+                    market_id
+                )
+
+        except Exception as close_error:
+            print(f"[{symbol} SHIB] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+        return
+
+    print(
+        f"[{symbol} SHIB] "
+        f"DOGE 손절 기준 설정 완료 | "
+        f"DOGE={doge_amount} | "
+        f"DOGE 기준가={doge_reference_price:.1f}"
+    )
+
     print(
         f"[{symbol} SHIB] 롱 진입 | timeframe={timeframe} | "
-        f"amount={amount} | price={current_price} | sl={sl_price}"
+        f"amount={amount} | price={current_price} | "
+        f"DOGE 기준가={doge_reference_price:.1f}"
     )
     
 
@@ -5960,8 +6632,33 @@ def trade_rsi_close_strategy_current(
             last_link_short_5m = time.time()
 
         place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | mode={bear_close['mode']} | amount={amount} | price={current_price} | tp={tp_price}")
+        # 기존 sl_price 기준으로 DOGE 수량 계산
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=bear_close["prev_close"],
+            side='short',
+            sl_pct=sl_pct
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+        doge_reference_price = doge_stop_info["sl_reference_price"]
+
+        # DOGE 매수 실패 시 SOL 긴급 청산
+        try:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
+            print(f"[{symbol} {timeframe}] DOGE 매수 실패: {e}")
+
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(symbol, market_id)
+
+            except Exception as close_error:
+                print(f"[{symbol} {timeframe}] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+            return
+
+        print(f"[{symbol} {timeframe}] CLOSE 기준 숏 진입 | amount={amount} | price={current_price} | tp={tp_price} | DOGE={doge_amount} | DOGE 기준가={doge_reference_price:.1f}")
         return
 
     print(f"[{symbol} {timeframe}] CLOSE 기준 진입 조건 없음")
@@ -5972,17 +6669,7 @@ def trade_rsi_close_strategy_current(
 
 
 
-#------ 제약 파괴후 추매 룰
-# 코인 잔고 개수 불러오는 함수 
-def get_position_amount(symbol):
-    """특정 심볼의 포지션 수량 반환 (양수=롱, 음수=숏, 0=없음)"""
-    balance = exchange.fetch_balance(params={'type': 'future'})
-    positions = balance.get('info', {}).get('positions', [])
-    for p in positions:
-        if p.get('symbol') == symbol.replace('/', ''):
-            amt = float(p.get('positionAmt', 0))
-            return amt
-    return 0
+
 
 
 def trade_rsi_close_strategy_xrp_sol(
@@ -6187,7 +6874,13 @@ last_volume_breakout_1h = 0
 while True:
     try:
         now = now_kst()
-        
+
+
+        # =================================================
+        # DOGE 수량 기준 SOL 손절 감시
+        # =================================================        
+        manage_doge_based_sol_exit()
+        time.sleep(1)
         # -------------------------------------------------
         # SHIB 보유 시 SHIB 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
