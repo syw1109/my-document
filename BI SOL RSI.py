@@ -3105,11 +3105,11 @@ def analyze_bullish_divergence_close(
     # 타임프레임별 close 가격 차이 기준
     # -------------------------------------------------
     if timeframe == '15m':
-        price_diff_pct_15_2 = 0.002
+        price_diff_pct_15_2 = 0.003
     elif timeframe == '1h':
         price_diff_pct_15_2 = 0.003
     else:
-        price_diff_pct_15_2 = 0.002
+        price_diff_pct_15_2 = 0.003
 
     # close 기준 가격 조건:
     # 직전봉 종가가 과거 15 봉 최저 종가보다
@@ -3120,15 +3120,41 @@ def analyze_bullish_divergence_close(
         * (1 - price_diff_pct_15_2)
     )
 
+    # RSI가 최저 RSI보다 10% 이상 높으면
+    # 가격 차이 조건을 0%로 완화
+    cond_rsi_15_2_relaxed = (
+        prev_candle['rsi']
+        >= lowest_rsi_15
+        * 1.10
+    )
+
+    # RSI 완화 조건에서는
+    # 직전봉 종가가 과거 최저 종가 이상이면 통과
+    cond_price_15_2_relaxed = (
+        prev_candle['close']
+        >= lowest_close_15_2
+    )
+
+    # 기존 가격 조건 또는
+    # RSI 10% 상승 + 가격 차이 0% 조건
+    cond_price_15_2_final = (
+        cond_price_15_2
+        or (
+            cond_rsi_15_2_relaxed
+            and cond_price_15_2_relaxed
+        )
+    )
+
     # close 기준 변동성 조건:
     # range_volatility가 0.3% 이상이어야 함
     cond_range_volatility_15_2 = (
-        range_volatility_15 >= 0.003
+        range_volatility_15
+        >= 0.003
     )
 
     # 15 봉 close 기준 최종 신호
     signal_15_2 = (
-        cond_price_15_2
+        cond_price_15_2_final
         and cond_range_volatility_15_2
         and cond_rsi_15
         and cond_volatility_15
@@ -3207,7 +3233,7 @@ def analyze_bullish_divergence_close(
     cond_price_30_confirm = (
         prev_candle['close']
         < lowest_bearish_close_30_confirm
-        * (1 - 0.002)
+        * (1 - 0.003)
     )
 
     # RSI 조건:
@@ -3216,7 +3242,7 @@ def analyze_bullish_divergence_close(
     cond_rsi_30 = (
         prev_candle['rsi']
         >= lowest_rsi_30
-        * (1 + rsi_raise_pct_30)
+        * (0.98)
     )
 
     # 직전봉 몸통 변동성 조건
@@ -5542,12 +5568,51 @@ def trade_rsi_close_strategy_eth_long_new(
         last_eth_long_15m = time.time()
 
     # TP/SL 바로 설정
+    # place_tp_long('SOL/USDT', amount, tp_price)
+    # place_sl_long('SOL/USDT', sl_price)
+    # print(f"[{symbol} ETH_LONG_NEW] TP/SL 설정 완료")
+
+    # print(f"[{symbol} ETH_LONG_NEW] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
+
+    # TP 설정
     place_tp_long('SOL/USDT', amount, tp_price)
-    place_sl_long('SOL/USDT', sl_price)
-    print(f"[{symbol} ETH_LONG_NEW] TP/SL 설정 완료")
 
-    print(f"[{symbol} ETH_LONG_NEW] 롱 진입 | amount={amount} | price={current_price} | tp={tp_price} | sl={sl_price}")
+    # 기존 SL 0.6% 기준으로 DOGE 수량 계산
+    doge_stop_info = calculate_doge_amount_from_sl(
+        entry_price=bull["prev_close"],
+        side='long',
+        sl_pct=0.006
+    )
 
+    doge_amount = doge_stop_info["doge_amount"]
+    doge_reference_price = doge_stop_info["sl_reference_price"]
+
+    # DOGE 매수 실패 시 SOL 긴급 청산
+    try:
+        buy_doge_for_sol_stop(doge_amount)
+
+    except Exception as e:
+        print(f"[{symbol} ETH_LONG_NEW] DOGE 매수 실패: {e}")
+
+        try:
+            if get_position_amount('SOL/USDT') != 0:
+                close_position_market(
+                    'SOL/USDT',
+                    market_id
+                )
+
+        except Exception as close_error:
+            print(f"[{symbol} ETH_LONG_NEW] DOGE 매수 실패 후 SOL 긴급 청산 실패: {close_error}")
+
+        return
+
+    print(
+        f"[{symbol} ETH_LONG_NEW] "
+        f"TP 설정 및 DOGE 손절 기준 설정 완료 | "
+        f"tp={tp_price} | "
+        f"DOGE={doge_amount} | "
+        f"DOGE 기준가={doge_reference_price:.1f}"
+    )
     
 #    
     
@@ -6880,7 +6945,7 @@ while True:
         # DOGE 수량 기준 SOL 손절 감시
         # =================================================        
         manage_doge_based_sol_exit()
-        time.sleep(1)
+        time.sleep(0.5)
         # -------------------------------------------------
         # SHIB 보유 시 SHIB 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
@@ -7006,15 +7071,15 @@ while True:
         # =================================================
         # 4시간봉 RSI Pistol 전략
         # =================================================
-        if not has_position(MARKET_ID_SOL):
-            trade_rsi_pistol_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='4h',
-                tp_long_pct=0.016,
-                tp_long_pct_1=0.018,
-                tp_long_pct_2=0.022
-            )
+        # if not has_position(MARKET_ID_SOL):
+        #     trade_rsi_pistol_strategy(
+        #         symbol=SOL_SYMBOL,
+        #         market_id=MARKET_ID_SOL,
+        #         timeframe='4h',
+        #         tp_long_pct=0.016,
+        #         tp_long_pct_1=0.018,
+        #         tp_long_pct_2=0.022
+        #     )
 
 
         if not has_position(MARKET_ID_SOL):
@@ -7038,7 +7103,7 @@ while True:
                 tp_long_pct_2=0.018
             )
 
-        time.sleep(2)
+        time.sleep(1)
         
         # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
         # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
@@ -7058,8 +7123,8 @@ while True:
                 rsi_raise_pct=0.001,
                 rsi_drop_pct=0.001,
                 min_volatility_30=0.004, # 30은 close 기준으로 바꿈
-                price_diff_pct_30=0.005,
-                rsi_raise_pct_30=0.01,
+                price_diff_pct_30=0.004,
+                rsi_raise_pct_30=0.01, # 26/10/3 -2%까지 허용하는걸로 변경
                 rsi_drop_pct_30=0.01
             )
 
@@ -7080,7 +7145,7 @@ while True:
                 rsi_drop_pct=0.001,
                 min_volatility_30=0.003,
                 price_diff_pct_30=0.004, # 30은 close 기준으로 바꿈
-                rsi_raise_pct_30=0.015,
+                rsi_raise_pct_30=0.015, # 26/10/3 -2%까지 허용하는걸로 변경
                 rsi_drop_pct_30=0.015
             )
 
@@ -7134,8 +7199,8 @@ while True:
                 symbol='SOL/USDT',
                 market_id='SOLUSDT',
                 timeframe='1h',
-                tp_long_pct=0.014,
-                tp_long_pct_2=0.016,
+                tp_long_pct=0.011,
+                tp_long_pct_2=0.011,
                 min_volatility=0.0015
             )
 
@@ -7143,8 +7208,8 @@ while True:
                 symbol='SOL/USDT',
                 market_id='SOLUSDT',
                 timeframe='15m',
-                tp_long_pct=0.012,
-                tp_long_pct_2=0.014,
+                tp_long_pct=0.011,
+                tp_long_pct_2=0.011,
                 min_volatility=0.0015
             )
 
@@ -7321,7 +7386,7 @@ while True:
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
-        time.sleep(16)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
+        time.sleep(10)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
