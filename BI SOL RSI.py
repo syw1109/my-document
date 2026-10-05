@@ -3129,10 +3129,10 @@ def analyze_bullish_divergence_close(
     )
 
     # RSI 완화 조건에서는
-    # 직전봉 종가가 과거 최저 종가보다 같거나 작아야함. 무조건 0.3% 작아야되는 조건 완화
+    # 직전봉 종가가 과거 최저 종가+0.1% 보다 같거나 작아야함. 무조건 0.3% 작아야되는 조건 완화
     cond_price_15_2_relaxed = (
         prev_candle['close']
-        <= lowest_close_15_2
+        <= lowest_close_15_2*1.0005
     )
 
     # 기존 가격 조건 또는
