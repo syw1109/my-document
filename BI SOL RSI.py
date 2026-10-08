@@ -2871,7 +2871,8 @@ def analyze_bullish_divergence_close(
     price_diff_pct=0.001,
     rsi_raise_pct_30=0.001,
     min_volatility_30=0.001,
-    price_diff_pct_30=0.005
+    price_diff_pct_30=0.005,
+    min_volatility_15_2=0.004
 ):
     """
     상승 다이버전스 판단 함수.
@@ -3108,6 +3109,8 @@ def analyze_bullish_divergence_close(
         / prev_candle['open']
         >= min_volatility
     )
+    
+  
 
     # 15 봉 low 기준 최종 신호
     signal_15 = (
@@ -3143,6 +3146,17 @@ def analyze_bullish_divergence_close(
         * (1 - price_diff_pct_15_2)
     )
 
+    # 15 봉 close 기준 완화 조건 전용 변동성
+    # 직전봉 몸통 변동성이 0.4% 이상이어야 함
+    cond_volatility_15_2 = (
+        abs(
+            prev_candle['close']
+            - prev_candle['open']
+        )
+        / prev_candle['open']
+        >= min_volatility_15_2
+    )  
+
     # -------------------------------------------------
     # RSI +9% 완화 조건
     # -------------------------------------------------
@@ -3174,11 +3188,11 @@ def analyze_bullish_divergence_close(
     # -------------------------------------------------
 
     # base_7 음봉 최저 RSI보다
-    # 직전봉 RSI가 5% 이상 높으면 완화
+    # 직전봉 RSI가 7% 이상 높으면 완화
     cond_rsi_15_2_relaxed_5 = (
         prev_candle['rsi']
         >= lowest_rsi_7
-        * 1.05
+        * 1.07
     )
 
     # RSI +5% 조건에서는
@@ -3195,27 +3209,60 @@ def analyze_bullish_divergence_close(
         cond_rsi_15_2_relaxed_5
         and cond_price_15_2_relaxed_5
     )
+
+
     # -------------------------------------------------
-    # 최종 가격 조건
+    # close 기준 구간 변동성 조건
     # -------------------------------------------------
 
-    # 기존 가격 조건 또는
-    # RSI +9% 및 가격 +0.05% 조건 또는
-    # RSI +5% 및 가격 +0.15% 조건
-    cond_price_15_2_final = (
-        cond_price_15_2
-        or cond_relaxed_price_15_2_9
-        or cond_relaxed_price_15_2_5
+    # range_volatility가 구간 변동성 1% 이상
+    cond_range_volatility_15_2 = (
+        range_volatility_15
+        >= 0.01
     )
 
     # -------------------------------------------------
-    # close 기준 변동성 조건
+    # 15 봉 close 기준 최종 신호
     # -------------------------------------------------
 
-    # range_volatility가 0.3% 이상이어야 함
-    cond_range_volatility_15_2 = (
-        range_volatility_15
-        >= 0.003
+
+    # -------------------------------------------------
+    # 기존 close 기준 신호
+    # -------------------------------------------------
+
+    signal_15_2_base = (
+        cond_price_15_2
+        and cond_range_volatility_15_2
+        and cond_rsi_15
+        and cond_volatility_15
+        and cond_bearish_candle
+        and cond_bollinger_filter
+    )
+
+    # -------------------------------------------------
+    # RSI +9% 완화 신호
+    # -------------------------------------------------
+
+    signal_15_2_relaxed_9 = (
+        cond_relaxed_price_15_2_9
+        and cond_range_volatility_15_2
+        and cond_rsi_15
+        and cond_volatility_15_2
+        and cond_bearish_candle
+        and cond_bollinger_filter
+    )
+
+    # -------------------------------------------------
+    # RSI +7% 완화 신호
+    # -------------------------------------------------
+
+    signal_15_2_relaxed_5 = (
+        cond_relaxed_price_15_2_5
+        and cond_range_volatility_15_2
+        and cond_rsi_15
+        and cond_volatility_15_2
+        and cond_bearish_candle
+        and cond_bollinger_filter
     )
 
     # -------------------------------------------------
@@ -3223,12 +3270,9 @@ def analyze_bullish_divergence_close(
     # -------------------------------------------------
 
     signal_15_2 = (
-        cond_price_15_2_final
-        and cond_range_volatility_15_2
-        and cond_rsi_15
-        and cond_volatility_15
-        and cond_bearish_candle
-        and cond_bollinger_filter
+        signal_15_2_base
+        or signal_15_2_relaxed_9
+        or signal_15_2_relaxed_5
     )
 
     # =================================================
