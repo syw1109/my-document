@@ -6785,6 +6785,10 @@ def get_short_upper_tail_info(candle):
     }
 
 
+# =================================================
+# LINK 포지션 연동 SOL 꼬리 전략 조건 함수
+# =================================================
+
 def analyze_sol_link_tail_signal(
     symbol,
     timeframe,
@@ -6794,35 +6798,52 @@ def analyze_sol_link_tail_signal(
     """
     LINK 포지션 방향에 맞춰 SOL 꼬리 진입 조건을 판단합니다.
 
-    데이터:
+    데이터 함수:
     - get_candles_with_bb_current()
-    - 현재 진행 중인 SOL 봉 포함
+    - 현재 진행 중인 봉 포함
 
     인덱스 기준:
     - df.iloc[-1]: 현재 진행 중인 SOL 봉
     - df.iloc[-2]: 직전 확정봉
     - df.iloc[-3]: 직전봉의 직전 확정봉
 
-    일반/스페셜1 기준봉:
+    일반 / 스페셜1 기준봉:
     - 직전봉 우선
     - 직전봉이 조건을 충족하지 않을 때 직2전봉 사용
 
-    스페셜 2:
-    - 직전봉 꼬리 비율 > 60%
-    - 직전봉 꼬리 절대 크기 > 종가의 0.2%
+    롱 일반 / 스페셜1:
+    - 기준봉 low < 기준봉 bb_lower
+    - 아래꼬리 조건 충족
+    - 현재가 <= 기준가 × 1.0003에서 진입
+
+    숏 일반 / 스페셜1:
+    - 기준봉 high > 기준봉 bb_upper
+    - 윗꼬리 조건 충족
+    - 현재가 >= 기준가 × 0.9997에서 진입
+
+    스페셜1:
+    - 기준봉 몸통 변동성 > 0.95%
+    - tail_ratio > 0.15
+    - tail_ratio > 0.66 또는 tail_pct_of_close > 0.3%
+    - 롱 진입 기준: 몸통 하단과 저가의 중간값
+    - 숏 진입 기준: 몸통 상단과 고가의 중간값
+    - TP: 기준 캔들의 시가
+
+    스페셜2 롱:
+    - 직전봉 아래꼬리 / 몸통 > 60%
+    - 직전봉 아래꼬리 > 종가의 0.2%
     - 직2전봉 몸통 변동성 >= 0.65%
-    - 충족 시 현재가 기준 즉시 시장가 진입
-    - 스페셜 2 TP는 전략 함수에서 1% 적용
+    - 직2전봉 종가 < 직2전봉 당시 bb_lower
+    - 현재가에서 즉시 롱 진입
+    - 첫 SOL 포지션일 때 TP +1%
 
-    롱:
-    - 아래꼬리
-    - 일반/스페셜1은 BB 하단 이탈 필요
-    - 스페셜2는 별도 즉시 진입 경로이며 BB 조건 미적용
-
-    숏:
-    - 윗꼬리
-    - 일반/스페셜1은 BB 상단 이탈 필요
-    - 스페셜2는 별도 즉시 진입 경로이며 BB 조건 미적용
+    스페셜2 숏:
+    - 직전봉 윗꼬리 / 몸통 > 60%
+    - 직전봉 윗꼬리 > 종가의 0.2%
+    - 직2전봉 몸통 변동성 >= 0.65%
+    - 직2전봉 종가 > 직2전봉 당시 bb_upper
+    - 현재가에서 즉시 숏 진입
+    - 첫 SOL 포지션일 때 TP -1%
     """
 
     # -------------------------------------------------
@@ -6841,41 +6862,52 @@ def analyze_sol_link_tail_signal(
             count=100
         )
 
-    # 현재봉, 직전봉, 직2전봉 필요
+    # 현재봉, 직전봉, 직2전봉 최소 필요
     if df is None or len(df) < 3:
         return {
             "signal": False,
             "side": side,
-            "reason": "SOL 캔들 데이터 부족"
+            "reason": "SOL 캔들 데이터 부족",
+            "signal_type": "none",
+            "special_case": False,
+            "special_case_2": False
         }
 
     # -------------------------------------------------
-    # 캔들 정의
+    # 현재봉 / 직전 확정봉 / 직2전 확정봉
     # -------------------------------------------------
-    # 현재 진행 중인 봉
     current_candle = df.iloc[-1]
-
-    # 직전 확정봉
     prev_candle = df.iloc[-2]
-
-    # 직전봉의 직전 확정봉
     prev2_candle = df.iloc[-3]
 
-    # 현재 진행 중인 봉의 최신 종가
-    # 실제 시장가 체결은 거래소 호가 상황에 따라 다를 수 있음
+    # 현재 진행 중인 봉의 최신 close를 현재 가격으로 사용
     current_price = float(current_candle['close'])
 
     # =================================================
     # 스페셜 2 조건 확인
     # =================================================
-    # 스페셜2는 일반/스페셜1보다 우선 적용합니다.
-    # 조건 충족 시 기준 가격까지 기다리지 않고 즉시 진입합니다.
+    # 스페셜2는 일반 및 스페셜1보다 우선합니다.
+    # 충족 시 기준 가격 재도달을 기다리지 않고
+    # 현재가에서 즉시 시장가 진입합니다.
 
     if side == 'long':
-        prev_tail_info = get_long_lower_tail_info(prev_candle)
-        prev2_tail_info = get_long_lower_tail_info(prev2_candle)
+        # -------------------------------------------------
+        # 직전봉 아래꼬리 정보
+        # -------------------------------------------------
+        prev_tail_info = get_long_lower_tail_info(
+            prev_candle
+        )
 
-        # 직전봉:
+        # -------------------------------------------------
+        # 직2전봉 몸통 변동성 정보
+        # -------------------------------------------------
+        prev2_tail_info = get_long_lower_tail_info(
+            prev2_candle
+        )
+
+        # -------------------------------------------------
+        # 스페셜2 직전봉 꼬리 조건
+        # -------------------------------------------------
         # 아래꼬리 / 몸통 > 60%
         # 아래꼬리 > 종가의 0.2%
         cond_special2_prev_tail = (
@@ -6883,22 +6915,52 @@ def analyze_sol_link_tail_signal(
             and prev_tail_info["tail_pct_of_close"] > 0.002
         )
 
-        # 직2전봉:
-        # 몸통 변동성 >= 0.65%
+        # -------------------------------------------------
+        # 스페셜2 직2전봉 몸통 변동성 조건
+        # -------------------------------------------------
+        # 직2전봉 몸통 변동성 >= 0.65%
         cond_special2_prev2_volatility = (
             prev2_tail_info["body_volatility"] >= 0.0065
         )
 
+        # -------------------------------------------------
+        # 스페셜2 직2전봉 볼린저 하단 조건
+        # -------------------------------------------------
+        # 직2전봉 종가가 당시 볼린저 하단보다 낮아야 함
+        prev2_close = float(prev2_candle['close'])
+        prev2_bb_lower = float(prev2_candle['bb_lower'])
+
+        cond_special2_prev2_bb = (
+            prev2_close < prev2_bb_lower
+        )
+
+        # -------------------------------------------------
+        # 롱 스페셜2 최종 조건
+        # -------------------------------------------------
         special2_signal = (
             cond_special2_prev_tail
             and cond_special2_prev2_volatility
+            and cond_special2_prev2_bb
         )
 
     else:
-        prev_tail_info = get_short_upper_tail_info(prev_candle)
-        prev2_tail_info = get_short_upper_tail_info(prev2_candle)
+        # -------------------------------------------------
+        # 직전봉 윗꼬리 정보
+        # -------------------------------------------------
+        prev_tail_info = get_short_upper_tail_info(
+            prev_candle
+        )
 
-        # 직전봉:
+        # -------------------------------------------------
+        # 직2전봉 몸통 변동성 정보
+        # -------------------------------------------------
+        prev2_tail_info = get_short_upper_tail_info(
+            prev2_candle
+        )
+
+        # -------------------------------------------------
+        # 스페셜2 직전봉 꼬리 조건
+        # -------------------------------------------------
         # 윗꼬리 / 몸통 > 60%
         # 윗꼬리 > 종가의 0.2%
         cond_special2_prev_tail = (
@@ -6906,24 +6968,42 @@ def analyze_sol_link_tail_signal(
             and prev_tail_info["tail_pct_of_close"] > 0.002
         )
 
-        # 직2전봉:
-        # 몸통 변동성 >= 0.65%
+        # -------------------------------------------------
+        # 스페셜2 직2전봉 몸통 변동성 조건
+        # -------------------------------------------------
+        # 직2전봉 몸통 변동성 >= 0.65%
         cond_special2_prev2_volatility = (
             prev2_tail_info["body_volatility"] >= 0.0065
         )
 
+        # -------------------------------------------------
+        # 스페셜2 직2전봉 볼린저 상단 조건
+        # -------------------------------------------------
+        # 직2전봉 종가가 당시 볼린저 상단보다 높아야 함
+        prev2_close = float(prev2_candle['close'])
+        prev2_bb_upper = float(prev2_candle['bb_upper'])
+
+        cond_special2_prev2_bb = (
+            prev2_close > prev2_bb_upper
+        )
+
+        # -------------------------------------------------
+        # 숏 스페셜2 최종 조건
+        # -------------------------------------------------
         special2_signal = (
             cond_special2_prev_tail
             and cond_special2_prev2_volatility
+            and cond_special2_prev2_bb
         )
 
     # -------------------------------------------------
-    # 스페셜 2가 충족되면 즉시 반환
+    # 스페셜2 충족 시 즉시 반환
     # -------------------------------------------------
     if special2_signal:
         return {
             "signal": True,
             "side": side,
+            "signal_type": "special2",
             "reason": (
                 f"{side} 스페셜2 즉시 진입 조건 충족 | "
                 f"직전봉 꼬리비율="
@@ -6932,13 +7012,10 @@ def analyze_sol_link_tail_signal(
                 f"{prev2_tail_info['body_volatility'] * 100:.2f}%"
             ),
 
-            # 전략 함수에서 TP 1% 적용 여부 판단용
-            "signal_type": "special2",
-
-            # 현재 시장가 기준 즉시 진입
+            # 현재가 즉시 진입
             "current_price": float(current_price),
 
-            # 직전봉을 스페셜2 기준봉으로 기록
+            # 스페셜2의 기준봉은 직전봉
             "base_candle_name": "prev",
             "base_candle_ts": int(prev_candle['ts']),
             "base_candle_open": float(prev_candle['open']),
@@ -6946,43 +7023,81 @@ def analyze_sol_link_tail_signal(
             "base_candle_low": float(prev_candle['low']),
             "base_candle_close": float(prev_candle['close']),
 
-            # 현재가 즉시 진입이므로 별도의 가격 트리거 없음
+            # 직전봉 당시 BB 값도 기록
+            "base_bb_lower": float(prev_candle['bb_lower']),
+            "base_bb_upper": float(prev_candle['bb_upper']),
+
+            # 직전봉 꼬리 정보
+            "body": float(prev_tail_info["body"]),
+            "body_volatility": float(
+                prev_tail_info["body_volatility"]
+            ),
+            "tail_ratio": float(
+                prev_tail_info["tail_ratio"]
+            ),
+            "tail_pct_of_close": float(
+                prev_tail_info["tail_pct_of_close"]
+            ),
+
+            # 현재가에서 즉시 진입이므로
+            # 별도의 과거 가격 트리거는 없음
             "entry_reference_price": float(current_price),
             "entry_trigger_price": float(current_price),
             "current_price_condition": True,
 
-            # 스페셜1 여부는 False
+            # 스페셜1은 False
             "special_case": False,
 
-            # 스페셜2 여부
+            # 스페셜2는 True
             "special_case_2": True,
 
-            # 스페셜2 TP는 전략 함수에서 1%로 계산
+            # 스페셜2 TP는 전략 함수에서 ±1%로 계산
             "special_tp_price": None,
 
+            # -------------------------------------------------
             # 스페셜2 디버그 정보
+            # -------------------------------------------------
             "special2_prev_tail_ratio": float(
                 prev_tail_info["tail_ratio"]
             ),
             "special2_prev_tail_pct": float(
                 prev_tail_info["tail_pct_of_close"]
             ),
-            "special2_prev2_body_volatility": float(
-                prev2_tail_info["body_volatility"]
-            ),
             "special2_prev_tail_condition": bool(
                 cond_special2_prev_tail
             ),
+
+            "special2_prev2_body_volatility": float(
+                prev2_tail_info["body_volatility"]
+            ),
             "special2_prev2_volatility_condition": bool(
                 cond_special2_prev2_volatility
+            ),
+
+            "special2_prev2_close": float(prev2_close),
+
+            "special2_prev2_bb_lower": (
+                float(prev2_bb_lower)
+                if side == 'long'
+                else None
+            ),
+
+            "special2_prev2_bb_upper": (
+                float(prev2_bb_upper)
+                if side == 'short'
+                else None
+            ),
+
+            "special2_prev2_bb_condition": bool(
+                cond_special2_prev2_bb
             )
         }
 
     # =================================================
-    # 기존 일반 / 스페셜1 조건
+    # 일반 / 스페셜1 조건
     # =================================================
-
-    # 직전봉 우선, 실패 시 직2전봉
+    # 기준 캔들은 직전봉 우선,
+    # 직전봉 조건 실패 시에만 직2전봉을 확인합니다.
     base_candidates = [
         ("prev", prev_candle),
         ("prev2", prev2_candle)
@@ -7004,14 +7119,18 @@ def analyze_sol_link_tail_signal(
             candle_low = float(candle['low'])
             bb_lower = float(candle['bb_lower'])
 
-            # 기준봉 저가가 BB 하단보다 낮아야 함
+            # 기준봉 저가가 볼린저 하단보다 낮아야 함
             cond_bb_lower_break = (
                 candle_low < bb_lower
             )
 
-            tail_info = get_long_lower_tail_info(candle)
+            # 아래꼬리 정보 계산
+            tail_info = get_long_lower_tail_info(
+                candle
+            )
 
-            # BB 하단 이탈 + 아래꼬리 조건 만족 시 기준봉 선택
+            # BB 하단 이탈 + 아래꼬리 조건을
+            # 모두 만족하는 첫 기준봉을 선택
             if (
                 cond_bb_lower_break
                 and tail_info["tail_valid"]
@@ -7028,30 +7147,43 @@ def analyze_sol_link_tail_signal(
                     selected_entry_reference = (
                         tail_info["special_entry_price"]
                     )
-                    selected_tp_reference = float(candle['open'])
+
+                    # 스페셜1 TP는 기준 캔들의 시가
+                    selected_tp_reference = float(
+                        candle['open']
+                    )
 
                 # 일반:
-                # 저가를 진입 기준으로 사용
+                # 기준봉 저가를 진입 기준으로 사용
                 else:
                     selected_entry_reference = (
                         tail_info["normal_entry_price"]
                     )
+
+                    # 일반 TP는 전략 함수에서 ±0.6%로 계산
                     selected_tp_reference = None
 
+                # 직전봉 우선 조건이므로
+                # 첫 번째 충족 기준봉을 찾으면 중단
                 break
 
+        # 직전/직2전봉 모두 기준봉 조건 미충족
         if selected_candle is None:
             return {
                 "signal": False,
                 "side": side,
                 "signal_type": "none",
-                "reason": "직전 2개 봉에 BB 하단 이탈 아래꼬리 기준봉 없음",
+                "reason": (
+                    "직전 2개 봉에 "
+                    "BB 하단 이탈 아래꼬리 기준봉 없음"
+                ),
                 "current_price": float(current_price),
                 "special_case": False,
                 "special_case_2": False
             }
 
-        # 기준 가격의 +0.03% 이하에서 롱 진입
+        # 일반/스페셜1 롱 진입:
+        # 현재가가 기준가의 +0.03% 이하
         entry_trigger_price = (
             selected_entry_reference * 1.0003
         )
@@ -7070,14 +7202,18 @@ def analyze_sol_link_tail_signal(
             candle_high = float(candle['high'])
             bb_upper = float(candle['bb_upper'])
 
-            # 기준봉 고가가 BB 상단보다 높아야 함
+            # 기준봉 고가가 볼린저 상단보다 높아야 함
             cond_bb_upper_break = (
                 candle_high > bb_upper
             )
 
-            tail_info = get_short_upper_tail_info(candle)
+            # 윗꼬리 정보 계산
+            tail_info = get_short_upper_tail_info(
+                candle
+            )
 
-            # BB 상단 이탈 + 윗꼬리 조건 만족 시 기준봉 선택
+            # BB 상단 이탈 + 윗꼬리 조건을
+            # 모두 만족하는 첫 기준봉을 선택
             if (
                 cond_bb_upper_break
                 and tail_info["tail_valid"]
@@ -7094,30 +7230,43 @@ def analyze_sol_link_tail_signal(
                     selected_entry_reference = (
                         tail_info["special_entry_price"]
                     )
-                    selected_tp_reference = float(candle['open'])
+
+                    # 스페셜1 TP는 기준 캔들의 시가
+                    selected_tp_reference = float(
+                        candle['open']
+                    )
 
                 # 일반:
-                # 고가를 진입 기준으로 사용
+                # 기준봉 고가를 진입 기준으로 사용
                 else:
                     selected_entry_reference = (
                         tail_info["normal_entry_price"]
                     )
+
+                    # 일반 TP는 전략 함수에서 ±0.6%로 계산
                     selected_tp_reference = None
 
+                # 직전봉 우선 조건이므로
+                # 첫 번째 충족 기준봉을 찾으면 중단
                 break
 
+        # 직전/직2전봉 모두 기준봉 조건 미충족
         if selected_candle is None:
             return {
                 "signal": False,
                 "side": side,
                 "signal_type": "none",
-                "reason": "직전 2개 봉에 BB 상단 이탈 윗꼬리 기준봉 없음",
+                "reason": (
+                    "직전 2개 봉에 "
+                    "BB 상단 이탈 윗꼬리 기준봉 없음"
+                ),
                 "current_price": float(current_price),
                 "special_case": False,
                 "special_case_2": False
             }
 
-        # 기준 가격의 -0.03% 이상에서 숏 진입
+        # 일반/스페셜1 숏 진입:
+        # 현재가가 기준가의 -0.03% 이상
         entry_trigger_price = (
             selected_entry_reference * 0.9997
         )
@@ -7129,7 +7278,7 @@ def analyze_sol_link_tail_signal(
         signal = cond_current_price
 
     # =================================================
-    # 일반 / 스페셜1 결과 반환
+    # 일반 / 스페셜1 결과 메시지
     # =================================================
     if signal:
         reason = (
@@ -7143,20 +7292,30 @@ def analyze_sol_link_tail_signal(
             f"현재가가 진입 기준에 도달하지 않음"
         )
 
+    # =================================================
+    # 일반 / 스페셜1 결과 반환
+    # =================================================
     return {
         "signal": signal,
         "side": side,
+
+        # 일반 / 스페셜1 구분
         "signal_type": (
             "special1"
             if selected_special_case
             else "normal"
         ),
+
         "reason": reason,
 
+        # -------------------------------------------------
         # 현재 진행 중인 SOL 봉 가격
+        # -------------------------------------------------
         "current_price": float(current_price),
 
+        # -------------------------------------------------
         # 선택된 기준봉 정보
+        # -------------------------------------------------
         "base_candle_name": selected_name,
         "base_candle_ts": int(selected_candle['ts']),
         "base_candle_open": float(selected_candle['open']),
@@ -7164,12 +7323,16 @@ def analyze_sol_link_tail_signal(
         "base_candle_low": float(selected_candle['low']),
         "base_candle_close": float(selected_candle['close']),
 
+        # -------------------------------------------------
         # 기준봉 당시 볼린저 밴드
+        # -------------------------------------------------
         "base_bb_lower": float(selected_candle['bb_lower']),
         "base_bb_upper": float(selected_candle['bb_upper']),
         "base_bb_condition": bool(selected_bb_condition),
 
-        # 기준봉 꼬리 정보
+        # -------------------------------------------------
+        # 선택된 기준봉 꼬리 정보
+        # -------------------------------------------------
         "body": float(selected_tail_info["body"]),
         "body_volatility": float(
             selected_tail_info["body_volatility"]
@@ -7184,7 +7347,7 @@ def analyze_sol_link_tail_signal(
             selected_tail_info["tail_valid"]
         ),
 
-        # 일반 기본/완화 조건 확인용
+        # 기본/완화 경로 확인용
         "tail_basic_condition": bool(
             selected_tail_info["cond_tail_basic"]
         ),
@@ -7195,9 +7358,12 @@ def analyze_sol_link_tail_signal(
             selected_tail_info["cond_body_volatility"]
         ),
 
+        # -------------------------------------------------
         # 진입 기준 정보
+        # -------------------------------------------------
         "special_case": bool(selected_special_case),
         "special_case_2": False,
+
         "entry_reference_price": float(
             selected_entry_reference
         ),
@@ -7208,7 +7374,10 @@ def analyze_sol_link_tail_signal(
             cond_current_price
         ),
 
+        # -------------------------------------------------
         # 스페셜1 TP 기준
+        # -------------------------------------------------
+        # 일반 케이스이면 None
         "special_tp_price": (
             float(selected_tp_reference)
             if selected_tp_reference is not None
