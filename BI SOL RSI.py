@@ -6807,6 +6807,14 @@ def analyze_sol_link_tail_signal(
     - df.iloc[-2]: 직전 확정봉
     - df.iloc[-3]: 직전봉의 직전 확정봉
 
+    공통 최근 5개 확정봉 변동성 필터:
+    - 대상: df.iloc[-6:-1]
+    - 현재 진행 중인 봉은 제외
+    - 직전봉부터 직전 5번째 확정봉까지 포함
+    - 몸통 변동성 = |open - close| / open
+    - 최근 5개 확정봉 중 몸통 변동성이 0.5% 이상인 캔들이
+      하나 이상 있어야 모든 진입 조건이 통과함
+
     일반 / 스페셜1 기준봉:
     - 직전봉 우선
     - 직전봉이 조건을 충족하지 않을 때 직2전봉 사용
@@ -6862,8 +6870,8 @@ def analyze_sol_link_tail_signal(
             count=100
         )
 
-    # 현재봉, 직전봉, 직2전봉 최소 필요
-    if df is None or len(df) < 3:
+    # 현재봉, 직전봉, 직2전봉, 최근 5개 확정봉이 필요
+    if df is None or len(df) < 6:
         return {
             "signal": False,
             "side": side,
@@ -6882,6 +6890,82 @@ def analyze_sol_link_tail_signal(
 
     # 현재 진행 중인 봉의 최신 close를 현재 가격으로 사용
     current_price = float(current_candle['close'])
+
+    # =================================================
+    # 최근 5개 확정봉 몸통 변동성 필터
+    # =================================================
+    # 현재 진행 중인 -1 봉은 제외합니다.
+    #
+    # df.iloc[-6:-1] 포함 범위:
+    # -6, -5, -4, -3, -2
+    #
+    # 즉 직전봉(-2)부터 직전 5번째 확정봉(-6)까지
+    # 총 5개 확정봉을 검사합니다.
+    last_5_confirmed = df.iloc[-6:-1]
+
+    # 각 캔들의 몸통 변동성:
+    # |open - close| / open
+    last_5_body_volatility = (
+        abs(
+            last_5_confirmed['open']
+            - last_5_confirmed['close']
+        )
+        / last_5_confirmed['open']
+    )
+
+    # 최근 5개 확정봉 중 몸통 변동성이
+    # 0.5% 이상인 캔들이 하나라도 있는지 확인
+    cond_last_5_high_volatility = bool(
+        (last_5_body_volatility >= 0.005).any()
+    )
+
+    # 0.5% 이상 캔들의 개수
+    last_5_high_volatility_count = int(
+        (last_5_body_volatility >= 0.005).sum()
+    )
+
+    # 최근 5개 확정봉 중 최대 몸통 변동성
+    last_5_max_body_volatility = float(
+        last_5_body_volatility.max()
+    )
+
+    # 최근 5개 확정봉의 개별 몸통 변동성
+    last_5_body_volatility_list = [
+        float(value)
+        for value in last_5_body_volatility.tolist()
+    ]
+
+    # -------------------------------------------------
+    # 최근 5개 확정봉 변동성 조건 미충족 시 진입 금지
+    # -------------------------------------------------
+    # 이 필터는 일반 / 스페셜1 / 스페셜2 모두에 공통 적용됩니다.
+    if not cond_last_5_high_volatility:
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": (
+                "최근 5개 확정봉 중 몸통 변동성 0.5% 이상 "
+                "캔들이 없어 진입 금지"
+            ),
+            "current_price": float(current_price),
+            "special_case": False,
+            "special_case_2": False,
+
+            # 최근 5개 확정봉 변동성 디버그 정보
+            "last_5_body_volatility_list": (
+                last_5_body_volatility_list
+            ),
+            "last_5_max_body_volatility": (
+                last_5_max_body_volatility
+            ),
+            "last_5_high_volatility_count": (
+                last_5_high_volatility_count
+            ),
+            "last_5_high_volatility_condition": (
+                cond_last_5_high_volatility
+            )
+        }
 
     # =================================================
     # 스페셜 2 조건 확인
@@ -7055,6 +7139,22 @@ def analyze_sol_link_tail_signal(
             "special_tp_price": None,
 
             # -------------------------------------------------
+            # 최근 5개 확정봉 변동성 정보
+            # -------------------------------------------------
+            "last_5_body_volatility_list": (
+                last_5_body_volatility_list
+            ),
+            "last_5_max_body_volatility": (
+                last_5_max_body_volatility
+            ),
+            "last_5_high_volatility_count": (
+                last_5_high_volatility_count
+            ),
+            "last_5_high_volatility_condition": (
+                cond_last_5_high_volatility
+            ),
+
+            # -------------------------------------------------
             # 스페셜2 디버그 정보
             # -------------------------------------------------
             "special2_prev_tail_ratio": float(
@@ -7179,7 +7279,21 @@ def analyze_sol_link_tail_signal(
                 ),
                 "current_price": float(current_price),
                 "special_case": False,
-                "special_case_2": False
+                "special_case_2": False,
+
+                # 최근 5개 확정봉 변동성 정보
+                "last_5_body_volatility_list": (
+                    last_5_body_volatility_list
+                ),
+                "last_5_max_body_volatility": (
+                    last_5_max_body_volatility
+                ),
+                "last_5_high_volatility_count": (
+                    last_5_high_volatility_count
+                ),
+                "last_5_high_volatility_condition": (
+                    cond_last_5_high_volatility
+                )
             }
 
         # 일반/스페셜1 롱 진입:
@@ -7262,7 +7376,21 @@ def analyze_sol_link_tail_signal(
                 ),
                 "current_price": float(current_price),
                 "special_case": False,
-                "special_case_2": False
+                "special_case_2": False,
+
+                # 최근 5개 확정봉 변동성 정보
+                "last_5_body_volatility_list": (
+                    last_5_body_volatility_list
+                ),
+                "last_5_max_body_volatility": (
+                    last_5_max_body_volatility
+                ),
+                "last_5_high_volatility_count": (
+                    last_5_high_volatility_count
+                ),
+                "last_5_high_volatility_condition": (
+                    cond_last_5_high_volatility
+                )
             }
 
         # 일반/스페셜1 숏 진입:
@@ -7312,6 +7440,22 @@ def analyze_sol_link_tail_signal(
         # 현재 진행 중인 SOL 봉 가격
         # -------------------------------------------------
         "current_price": float(current_price),
+
+        # -------------------------------------------------
+        # 최근 5개 확정봉 변동성 정보
+        # -------------------------------------------------
+        "last_5_body_volatility_list": (
+            last_5_body_volatility_list
+        ),
+        "last_5_max_body_volatility": (
+            last_5_max_body_volatility
+        ),
+        "last_5_high_volatility_count": (
+            last_5_high_volatility_count
+        ),
+        "last_5_high_volatility_condition": (
+            cond_last_5_high_volatility
+        ),
 
         # -------------------------------------------------
         # 선택된 기준봉 정보
