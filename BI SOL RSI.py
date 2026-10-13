@@ -111,10 +111,12 @@ KST = timezone(timedelta(hours=9))
 SOL_SYMBOL = 'SOL/USDT'
 BTC_SYMBOL = 'BTC/USDT'
 DOGE_SYMBOL = 'DOGE/USDT'
+ETH_SYMBOL = 'ETH/USDT'
 UPBIT_TICKER = 'KRW-SOL'
 MARKET_ID_SOL = 'SOLUSDT'
 MARKET_ID_BTC = 'BTCUSDT'
 MARKET_ID_DOGE = 'DOGEUSDT'
+MARKET_ID_ETH = 'ETHUSDT'
 LEVERAGE = 10
 
 # 바이낸스 선물 거래소 연결
@@ -675,6 +677,453 @@ def manage_doge_based_sol_exit():
                     f"숏 청산 처리 실패: {e}"
                 )
 # doge 손절용    
+    
+# eth trailing stop 주문용
+# =================================================
+# ETH 포지션 연동 SOL 청산 전략용 데이터 함수
+# =================================================
+
+def get_confirmed_candles_with_ma7(
+    symbol,
+    timeframe='15m',
+    count=30
+):
+    """
+    현재 진행 중인 봉을 제거하고,
+    확정된 OHLCV와 15분봉 기준 7봉 이동평균선을 반환합니다.
+
+    사용 목적:
+    - ETH 포지션 방향에 따른 SOL 청산 전략
+    - SOL 15분봉 기준 직전 5개 확정봉 high/low 조회
+    - SOL 15분봉 기준 7봉 이동평균선 종가 마감 여부 확인
+
+    ma7:
+    - 최근 7개 15분봉 종가의 단순이동평균
+    - 일봉 기준 7일선이 아님
+    - 15분봉 차트의 7봉 이평선
+
+    반환 컬럼:
+    - ts, open, high, low, close, volume
+    - ma7
+    """
+
+    # -------------------------------------------------
+    # 타임프레임별 봉 길이
+    # -------------------------------------------------
+    tf_ms = {
+        '1m': 60_000,
+        '3m': 180_000,
+        '5m': 300_000,
+        '15m': 900_000,
+        '30m': 1_800_000,
+        '1h': 3_600_000,
+        '4h': 14_400_000,
+        '1d': 86_400_000,
+    }
+
+    interval_ms = tf_ms.get(timeframe)
+
+    if interval_ms is None:
+        raise ValueError(
+            f"지원하지 않는 타임프레임입니다: {timeframe}"
+        )
+
+    # 이 전략은 15분봉 기준 ma7 전용
+    if timeframe != '15m':
+        raise ValueError(
+            "이 함수는 15m 기준 ma7 청산 전략 전용입니다."
+        )
+
+    ma_length = 7
+
+    # -------------------------------------------------
+    # OHLCV 조회
+    # -------------------------------------------------
+    # 현재 진행 중인 봉 제거 후에도 충분한 확정봉이 남도록
+    # count + 여유분을 조회합니다.
+    ohlcv = exchange.fetch_ohlcv(
+        symbol,
+        timeframe=timeframe,
+        limit=count + 5
+    )
+
+    if ohlcv is None or len(ohlcv) < ma_length + 5:
+        raise ValueError(
+            f"{symbol} {timeframe} ma7 데이터가 부족합니다."
+        )
+
+    # -------------------------------------------------
+    # DataFrame 변환
+    # -------------------------------------------------
+    df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
+
+    # -------------------------------------------------
+    # 현재 진행 중인 15분봉 제거
+    # -------------------------------------------------
+    now_ms = int(
+        datetime.datetime.now(
+            datetime.timezone.utc
+        ).timestamp() * 1000
+    )
+
+    current_candle_start = (
+        now_ms // interval_ms
+    ) * interval_ms
+
+    # 현재 시작 중인 15분봉은 제거
+    df = df[
+        df['ts'] < current_candle_start
+    ].copy()
+
+    # 최근 count개 확정봉만 유지
+    df = df.tail(count).reset_index(drop=True)
+
+    if len(df) < ma_length + 5:
+        raise ValueError(
+            f"{symbol} {timeframe} 확정봉 데이터가 부족합니다."
+        )
+
+    # -------------------------------------------------
+    # 15분봉 기준 7봉 단순이동평균 계산
+    # -------------------------------------------------
+    # 각 행에서 해당 봉을 포함한 최근 7개 종가 평균
+    df['ma7'] = df['close'].rolling(
+        window=ma_length
+    ).mean()
+
+    # ma7이 아직 계산되지 않는 초반 NaN 제거
+    return df.dropna(
+        subset=['ma7']
+    ).reset_index(drop=True)
+        
+    
+# =================================================
+# ETH 포지션 연동 SOL 청산 전략 함수
+# =================================================
+
+# =================================================
+# ETH 포지션 연동 SOL 청산 전략
+# =================================================
+
+def manage_eth_based_sol_exit(
+    eth_symbol='ETH/USDT',
+    sol_symbol='SOL/USDT',
+    eth_market_id=MARKET_ID_ETH,
+    sol_market_id=MARKET_ID_SOL
+):
+    """
+    ETH 포지션과 SOL 포지션을 연동하여 관리합니다.
+
+    1. ETH 포지션이 없으면 이 전략은 동작하지 않습니다.
+
+    2. ETH 포지션이 있는데 SOL 포지션이 없으면:
+    - ETH 포지션을 시장가로 전량 청산합니다.
+
+    3. ETH 롱 + SOL 롱일 때:
+
+    조건 1:
+    - SOL 현재가가 최근 5개 확정 15분봉의
+      최저 low 이하로 내려가면 SOL 전량 시장가 청산
+
+    조건 2:
+    - 최근 5개 확정 15분봉 중
+      ma7 위에서 종가 마감한 봉이 2개 이상이고,
+      가장 최근 확정 15분봉 종가가 ma7 아래에서 마감하면
+      SOL 전량 시장가 청산
+
+    4. ETH 숏 + SOL 숏일 때:
+
+    조건 1:
+    - SOL 현재가가 최근 5개 확정 15분봉의
+      최고 high 이상으로 올라가면 SOL 전량 시장가 청산
+
+    조건 2:
+    - 최근 5개 확정 15분봉 중
+      ma7 아래에서 종가 마감한 봉이 2개 이상이고,
+      가장 최근 확정 15분봉 종가가 ma7 위에서 마감하면
+      SOL 전량 시장가 청산
+
+    5. SOL 청산 조건이 충족되면:
+    - SOL만 청산합니다.
+    - ETH는 유지됩니다.
+
+    주의:
+    - SOL 포지션이 없는 상태에서 ETH만 보유하면
+      ETH도 청산됩니다.
+    """
+
+    # =================================================
+    # ETH 및 SOL 포지션 조회
+    # =================================================
+    eth_position = get_position_amount(
+        eth_symbol
+    )
+
+    sol_position = get_position_amount(
+        sol_symbol
+    )
+
+    # -------------------------------------------------
+    # ETH 포지션이 없으면 전략 비활성
+    # -------------------------------------------------
+    if eth_position == 0:
+        return
+
+    # -------------------------------------------------
+    # ETH가 있는데 SOL이 없으면 ETH 청산
+    # -------------------------------------------------
+    # DOGE 전략에서 SOL이 없을 때 DOGE를 정리하는 방식과 동일하게
+    # ETH/SOL 연동 포지션을 정리합니다.
+    if sol_position == 0:
+        print(
+            f"[ETH-SOL EXIT] "
+            f"SOL 포지션이 없어서 ETH 포지션 청산 | "
+            f"ETH position={eth_position}"
+        )
+
+        try:
+            close_position_market(
+                eth_symbol,
+                eth_market_id
+            )
+
+        except Exception as e:
+            print(
+                f"[ETH-SOL EXIT] "
+                f"ETH 청산 실패: {e}"
+            )
+
+        return
+
+    # -------------------------------------------------
+    # ETH와 SOL 방향이 반대면 이 전략은 청산하지 않음
+    # -------------------------------------------------
+    # ETH 롱 + SOL 숏
+    if eth_position > 0 and sol_position < 0:
+        return
+
+    # ETH 숏 + SOL 롱
+    if eth_position < 0 and sol_position > 0:
+        return
+
+    # =================================================
+    # SOL 15분봉 확정봉 + ma7 데이터 조회
+    # =================================================
+    try:
+        df_sol = get_confirmed_candles_with_ma7(
+            symbol=sol_symbol,
+            timeframe='15m',
+            count=30
+        )
+
+    except Exception as e:
+        print(
+            f"[ETH-SOL EXIT] "
+            f"SOL 15m ma7 데이터 조회 실패: {e}"
+        )
+        return
+
+    if df_sol is None or len(df_sol) < 5:
+        print(
+            "[ETH-SOL EXIT] "
+            "SOL 15m 확정봉 데이터 부족"
+        )
+        return
+
+    # =================================================
+    # 최근 5개 확정 15분봉
+    # =================================================
+    # 데이터 함수에서 현재 진행 중인 봉을 제거했으므로
+    # df.iloc[-1]은 가장 최근 확정 15분봉입니다.
+    last_5_candles = df_sol.iloc[-5:]
+
+    # 가장 최근 확정 15분봉
+    last_confirmed_candle = df_sol.iloc[-1]
+
+    # 최근 5개 확정봉 최저 low / 최고 high
+    lowest_low_5 = float(
+        last_5_candles['low'].min()
+    )
+
+    highest_high_5 = float(
+        last_5_candles['high'].max()
+    )
+
+    # =================================================
+    # 최근 5개 확정봉 ma7 위/아래 마감 개수
+    # =================================================
+    close_above_ma7_count = int(
+        (
+            last_5_candles['close']
+            > last_5_candles['ma7']
+        ).sum()
+    )
+
+    close_below_ma7_count = int(
+        (
+            last_5_candles['close']
+            < last_5_candles['ma7']
+        ).sum()
+    )
+
+    # 가장 최근 확정봉 종가 및 ma7
+    last_close = float(
+        last_confirmed_candle['close']
+    )
+
+    last_ma7 = float(
+        last_confirmed_candle['ma7']
+    )
+
+    # =================================================
+    # SOL 현재가 조회
+    # =================================================
+    try:
+        current_sol_price = float(
+            exchange.fetch_ticker(
+                sol_symbol
+            )['last']
+        )
+
+    except Exception as e:
+        print(
+            f"[ETH-SOL EXIT] "
+            f"SOL 현재가 조회 실패: {e}"
+        )
+        return
+
+    if current_sol_price <= 0:
+        print(
+            "[ETH-SOL EXIT] "
+            "SOL 현재가가 올바르지 않습니다."
+        )
+        return
+
+    # =================================================
+    # 현재 상태 출력
+    # =================================================
+    print(
+        f"[ETH-SOL EXIT] "
+        f"ETH position={eth_position} | "
+        f"SOL position={sol_position} | "
+        f"current={current_sol_price:.4f} | "
+        f"low5={lowest_low_5:.4f} | "
+        f"high5={highest_high_5:.4f} | "
+        f"last_close={last_close:.4f} | "
+        f"ma7={last_ma7:.4f} | "
+        f"above_ma7={close_above_ma7_count} | "
+        f"below_ma7={close_below_ma7_count}"
+    )
+
+    # =================================================
+    # ETH 롱 + SOL 롱 청산
+    # =================================================
+    if eth_position > 0 and sol_position > 0:
+
+        # -------------------------------------------------
+        # 조건 1:
+        # 현재 SOL 가격이 최근 5개 확정 15분봉 최저 low 이하
+        # -------------------------------------------------
+        cond_long_price_exit = (
+            current_sol_price <= lowest_low_5
+        )
+
+        # -------------------------------------------------
+        # 조건 2:
+        # 최근 5개 봉 중 ma7 위에서 마감한 봉이 2개 이상이고,
+        # 가장 최근 확정 15분봉이 ma7 아래에서 마감
+        # -------------------------------------------------
+        cond_long_ma_exit = (
+            close_above_ma7_count >= 2
+            and last_close < last_ma7
+        )
+
+        # -------------------------------------------------
+        # 둘 중 하나라도 충족 시 SOL 롱 전량 청산
+        # -------------------------------------------------
+        if cond_long_price_exit or cond_long_ma_exit:
+            exit_reason = (
+                "현재 SOL 가격이 최근 5개 확정 15m 봉 최저 low 이하"
+                if cond_long_price_exit
+                else (
+                    "최근 5개 봉 ma7 위 마감 2개 이상 후 "
+                    "최신 확정봉 ma7 하향 마감"
+                )
+            )
+
+            print(
+                f"[ETH-SOL EXIT] "
+                f"SOL 롱 청산 조건 충족 | "
+                f"reason={exit_reason}"
+            )
+
+            try:
+                close_position_market(
+                    sol_symbol,
+                    sol_market_id
+                )
+
+            except Exception as e:
+                print(
+                    f"[ETH-SOL EXIT] "
+                    f"SOL 롱 청산 실패: {e}"
+                )
+
+    # =================================================
+    # ETH 숏 + SOL 숏 청산
+    # =================================================
+    elif eth_position < 0 and sol_position < 0:
+
+        # -------------------------------------------------
+        # 조건 1:
+        # 현재 SOL 가격이 최근 5개 확정 15분봉 최고 high 이상
+        # -------------------------------------------------
+        cond_short_price_exit = (
+            current_sol_price >= highest_high_5
+        )
+
+        # -------------------------------------------------
+        # 조건 2:
+        # 최근 5개 봉 중 ma7 아래에서 마감한 봉이 2개 이상이고,
+        # 가장 최근 확정 15분봉이 ma7 위에서 마감
+        # -------------------------------------------------
+        cond_short_ma_exit = (
+            close_below_ma7_count >= 2
+            and last_close > last_ma7
+        )
+
+        # -------------------------------------------------
+        # 둘 중 하나라도 충족 시 SOL 숏 전량 청산
+        # -------------------------------------------------
+        if cond_short_price_exit or cond_short_ma_exit:
+            exit_reason = (
+                "현재 SOL 가격이 최근 5개 확정 15m 봉 최고 high 이상"
+                if cond_short_price_exit
+                else (
+                    "최근 5개 봉 ma7 아래 마감 2개 이상 후 "
+                    "최신 확정봉 ma7 상향 마감"
+                )
+            )
+
+            print(
+                f"[ETH-SOL EXIT] "
+                f"SOL 숏 청산 조건 충족 | "
+                f"reason={exit_reason}"
+            )
+
+            try:
+                close_position_market(
+                    sol_symbol,
+                    sol_market_id
+                )
+
+            except Exception as e:
+                print(
+                    f"[ETH-SOL EXIT] "
+                    f"SOL 숏 청산 실패: {e}"
+                )    
+    
+# eth기반 trailing stop 주문 ma7선 기준    
     
 
 def has_position(symbol_market_id):
@@ -8062,6 +8511,25 @@ while True:
         manage_doge_based_sol_exit()
         time.sleep(0.5)
 
+
+        # =================================================
+        # ETH 포지션 기준 SOL 청산 감시
+        # =================================================
+        # ETH 롱 + SOL 롱:
+        # - 최근 5개 확정 15m 봉 최저 low 이하 시 SOL 청산
+        # - ma7 조건 충족 시 SOL 청산
+        #
+        # ETH 숏 + SOL 숏:
+        # - 최근 5개 확정 15m 봉 최고 high 이상 시 SOL 청산
+        # - ma7 조건 충족 시 SOL 청산
+        manage_eth_based_sol_exit(
+            eth_symbol='ETH/USDT',
+            sol_symbol=SOL_SYMBOL,
+            eth_market_id=MARKET_ID_ETH,
+            sol_market_id=MARKET_ID_SOL
+        )
+
+        time.sleep(0.5)
         # -------------------------------------------------
         # SHIB 보유 시 SHIB 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
