@@ -4897,7 +4897,7 @@ def trade_ada_volume_spike_sol(
     set_margin_and_leverage(symbol)
     current_balance = get_available_usdt()
 
-    if current_balance < 2500 or current_balance > 12000:
+    if current_balance < 2000 or current_balance > 12000:
         print(f"[{symbol} ADA] 계좌 잔고 {current_balance:.2f} USD 범위 밖이므로 진입 금지")
         return
 
@@ -5426,7 +5426,7 @@ def trade_rsi_close_strategy_eth_long_new(
 
     # 계좌 잔고 체크
     current_balance = get_available_usdt()
-    if current_balance < 2500 or current_balance > 12000:
+    if current_balance < 2000 or current_balance > 12000:
         print(f"[{symbol} ETH_LONG_NEW] 계좌 잔고 {current_balance:.2f} USD (2000~8000 밖이므로 진입 금지)")
         return
 
@@ -5929,7 +5929,7 @@ def trade_50ma_close_strategy(symbol, market_id, timeframe):
 
     # 계좌 잔고 체크
     current_balance = get_available_usdt()
-    if current_balance < 2500 or current_balance > 12000:
+    if current_balance < 2000 or current_balance > 12000:
         print(f"[{symbol} 50MA_CLOSE] 계좌 잔고 {current_balance:.2f} USD (2500~7000 밖이므로 진입 금지)")
         return
 
@@ -6262,7 +6262,7 @@ def trade_shib_ma20_25_breakout(symbol, market_id, timeframe):
     
     # 계좌 잔고 체크
     current_balance = get_available_usdt()
-    if current_balance < 2500 or current_balance > 12000:
+    if current_balance < 2000 or current_balance > 12000:
         print(f"[{symbol} SHIB] 계좌 잔고 {current_balance:.2f} USD (2500~12000 밖이므로 진입 금지)")
         return
     
@@ -6709,7 +6709,7 @@ def trade_rsi_close_strategy_xrp_sol(
     set_margin_and_leverage(symbol)
     current_balance = get_available_usdt()
 
-    if current_balance < 2500 or current_balance > 12000:
+    if current_balance < 2000 or current_balance > 7000:
         print(f"[{symbol}] 계좌 잔고 {current_balance:.2f} USD 범위 밖이므로 진입 금지")
         return
 
@@ -6811,8 +6811,9 @@ def trade_rsi_close_strategy_xrp_sol(
 
 
 #7 꼬리봉 LINK 전략
+
 # =================================================
-# 1. 데이터 함수
+# 1. 현재 진행 중인 봉을 포함한 OHLCV + BB 데이터 함수
 # =================================================
 
 def get_candles_with_bb_current(
@@ -6820,37 +6821,22 @@ def get_candles_with_bb_current(
     timeframe,
     count=100
 ):
-    """
-    현재 진행 중인 봉을 포함하여
-    OHLCV + 볼린저 밴드를 반환합니다.
-
-    - 현재 진행 중인 봉을 제거하지 않음
-    - RSI는 본 전략에서 사용하지 않으므로 계산하지 않음
-    - ETH 15m / 1h 꼬리 조건 분석용
-
-    반환 컬럼:
-    - ts, open, high, low, close, volume
-    - bb_middle, bb_upper, bb_lower
-    - ma20
-    """
-
     tf_ms = {
-        '1m': 60_000,
-        '3m': 180_000,
-        '5m': 300_000,
-        '15m': 900_000,
-        '30m': 1_800_000,
-        '1h': 3_600_000,
-        '4h': 14_400_000,
-        '1d': 86_400_000,
+        "1m": 60_000,
+        "3m": 180_000,
+        "5m": 300_000,
+        "15m": 900_000,
+        "30m": 1_800_000,
+        "1h": 3_600_000,
+        "4h": 14_400_000,
+        "1d": 86_400_000,
     }
 
-    interval_ms = tf_ms.get(timeframe)
+    if timeframe not in tf_ms:
+        raise ValueError(
+            f"지원하지 않는 타임프레임입니다: {timeframe}"
+        )
 
-    if interval_ms is None:
-        raise ValueError(f"지원하지 않는 타임프레임입니다: {timeframe}")
-
-    # 현재 진행 중인 봉을 포함한 데이터 조회
     ohlcv = exchange.fetch_ohlcv(
         symbol,
         timeframe=timeframe,
@@ -6858,384 +6844,506 @@ def get_candles_with_bb_current(
     )
 
     if ohlcv is None or len(ohlcv) < 25:
-        raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
+        raise ValueError(
+            f"{symbol} {timeframe} 데이터가 부족합니다."
+        )
 
-    df = pd.DataFrame(ohlcv, columns=['ts', 'open', 'high', 'low', 'close', 'volume'])
+    df = pd.DataFrame(
+        ohlcv,
+        columns=[
+            "ts", "open", "high", "low", "close", "volume"
+        ]
+    )
 
-    # 현재 진행 중인 봉을 포함한 최근 count개 봉 사용
     df = df.tail(count).reset_index(drop=True)
 
     if len(df) < 25:
-        raise ValueError(f"{symbol} {timeframe} 데이터가 부족합니다.")
+        raise ValueError(
+            f"{symbol} {timeframe} 데이터가 부족합니다."
+        )
 
-    # -------------------------------------------------
-    # 볼린저 밴드 계산
-    # -------------------------------------------------
-    bb_length = 20
-    bb_std_multiplier = 2.0
-
-    df['bb_middle'] = df['close'].rolling(window=bb_length).mean()
-    df['bb_std'] = df['close'].rolling(window=bb_length).std(ddof=0)
-    df['bb_upper'] = df['bb_middle'] + bb_std_multiplier * df['bb_std']
-    df['bb_lower'] = df['bb_middle'] - bb_std_multiplier * df['bb_std']
-
-    # 기존 코드 호환용
-    df['ma20'] = df['bb_middle']
+    df["bb_middle"] = df["close"].rolling(20).mean()
+    df["bb_std"] = df["close"].rolling(20).std(ddof=0)
+    df["bb_upper"] = df["bb_middle"] + 2.0 * df["bb_std"]
+    df["bb_lower"] = df["bb_middle"] - 2.0 * df["bb_std"]
+    df["ma20"] = df["bb_middle"]
 
     return df.dropna(
-        subset=['bb_middle', 'bb_upper', 'bb_lower']
+        subset=["bb_middle", "bb_upper", "bb_lower"]
     ).reset_index(drop=True)
 
 
 # =================================================
-# 2. LINK 포지션 연동 SOL 꼬리 전략 조건 함수
+# 2. 캔들 계산 보조 함수
 # =================================================
+
+def _link_tail_candle_metrics(candle):
+    o = float(candle["open"])
+    h = float(candle["high"])
+    l = float(candle["low"])
+    c = float(candle["close"])
+
+    body = abs(o - c)
+
+    return {
+        "open": o,
+        "high": h,
+        "low": l,
+        "close": c,
+        "body": body,
+        "body_low": min(o, c),
+        "body_high": max(o, c),
+        "lower_tail": min(o, c) - l,
+        "upper_tail": h - max(o, c),
+        "body_volatility": body / o if o > 0 else 0.0,
+    }
+
 
 def get_long_lower_tail_info(candle):
-    """
-    SOL 롱 진입용 아래꼬리 정보를 계산합니다.
-    아래꼬리:
-    - min(open, close) - low
-    몸통:
-    - |open - close|
-    꼬리 비율:
-    - 아래꼬리 / 몸통
-    꼬리 절대 크기:
-    - 아래꼬리 / close
-    롱 기준 캔들 기본 조건:
-    - 몸통 변동성 > 0.1%
-    - 아래 두 조건 경로 중 하나를 충족해야 함
-      기본 경로:
-      - 꼬리 / 몸통 > 0.20
-      - 아래꼬리 > 종가의 0.15%
-      완화 경로:
-      - 꼬리 / 몸통 > 0.15
-      - 아래꼬리 > 종가의 0.20%
-    롱 특별 케이스:
-    - 몸통 변동성 > 0.95%
-    - 꼬리 / 몸통 > 0.15
-    - 그리고 아래 둘 중 하나:
-      1. 꼬리 / 몸통 > 0.66
-      2. 아래꼬리 > 종가의 0.3%
-    """
-    # -------------------------------------------------
-    # OHLC 추출
-    # -------------------------------------------------
-    open_price = float(candle['open'])
-    close_price = float(candle['close'])
-    low_price = float(candle['low'])
+    m = _link_tail_candle_metrics(candle)
 
-    # -------------------------------------------------
-    # 몸통 및 아래꼬리 계산
-    # -------------------------------------------------
-    # 몸통 크기: 양봉/음봉 모두 절대값 사용
-    body = abs(open_price - close_price)
+    body = m["body"]
+    lower_tail = m["lower_tail"]
 
-    # 몸통의 낮은 가격
-    # 양봉이면 시가, 음봉이면 종가가 됩니다.
-    body_low = min(open_price, close_price)
-
-    # 아래꼬리 = 몸통 하단 - 저가
-    lower_tail = body_low - low_price
-
-    # -------------------------------------------------
-    # 꼬리 비율 계산
-    # -------------------------------------------------
-    # 몸통이 0인 도지봉은 꼬리/몸통 비율을 계산할 수 없으므로
-    # 0으로 처리합니다.
-    if body <= 0:
-        tail_ratio = 0.0
-    else:
-        tail_ratio = lower_tail / body
-
-    # -------------------------------------------------
-    # 종가 대비 아래꼬리 절대 크기 계산
-    # -------------------------------------------------
-    if close_price <= 0:
-        tail_pct_of_close = 0.0
-    else:
-        tail_pct_of_close = lower_tail / close_price
-
-    # -------------------------------------------------
-    # 몸통 변동성 계산
-    # -------------------------------------------------
-    # 몸통 변동성 = |시가 - 종가| / 시가
-    if open_price <= 0:
-        body_volatility = 0.0
-    else:
-        body_volatility = body / open_price
-
-    # -------------------------------------------------
-    # 롱 기본 꼬리 조건
-    # -------------------------------------------------
-    # 공통 조건:
-    # - 몸통 변동성 > 0.1%
-    cond_body_volatility = (
-        body_volatility > 0.001
+    tail_ratio = lower_tail / body if body > 0 else 0.0
+    tail_pct = (
+        lower_tail / m["close"]
+        if m["close"] > 0
+        else 0.0
     )
 
-    # 기본 경로:
-    # - 꼬리 비율 > 0.20
-    # - 아래꼬리 절대 크기 > 종가의 0.15%
-    cond_tail_basic = (
+    cond_body = m["body_volatility"] > 0.001
+
+    cond_basic = (
         tail_ratio > 0.20
-        and tail_pct_of_close > 0.0015
+        and tail_pct > 0.0015
     )
 
-    # 완화 경로:
-    # - 꼬리 비율 > 0.15
-    # - 아래꼬리 절대 크기 > 종가의 0.20%
-    cond_tail_relaxed = (
+    cond_relaxed = (
         tail_ratio > 0.15
-        and tail_pct_of_close > 0.002
+        and tail_pct > 0.002
     )
 
-    # 최종 기본 아래꼬리 조건
-    tail_valid = (
-        cond_body_volatility
-        and (
-            cond_tail_basic
-            or cond_tail_relaxed
-        )
-    )
-
-    # -------------------------------------------------
-    # 롱 특별 케이스
-    # -------------------------------------------------
-    # 1. 몸통 변동성 > 0.95%
-    # 2. 꼬리 비율 > 0.15
-    # 3. 꼬리 비율 > 0.66 또는
-    #    아래꼬리 절대 크기 > 종가의 0.3%
     special_case = (
-        body_volatility > 0.0095
+        m["body_volatility"] > 0.0095
         and tail_ratio > 0.15
         and (
             tail_ratio > 0.66
-            or tail_pct_of_close > 0.003
+            or tail_pct > 0.003
         )
     )
-    # -------------------------------------------------
-    # 일반 진입 기준
-    # -------------------------------------------------
-    # 일반 조건에서는 기준 캔들의 저가를 진입 기준으로 사용
-    normal_entry_price = low_price
-
-    # -------------------------------------------------
-    # 특별 케이스 진입 기준
-    # -------------------------------------------------
-    # 몸통 하단과 저가의 중간값을 사용합니다.
-    #
-    # 예시:
-    # O=100, H=101, L=95, C=98
-    # body_low = 98
-    # special_entry_price = (98 + 95) / 2 = 96.5
-    special_entry_price = (
-        body_low + low_price
-    ) / 2
 
     return {
-        "open": open_price,
-        "close": close_price,
-        "low": low_price,
-
-        "body": body,
-        "body_low": body_low,
-        "lower_tail": lower_tail,
-
+        **m,
         "tail_ratio": tail_ratio,
-        "tail_pct_of_close": tail_pct_of_close,
-        "body_volatility": body_volatility,
-
-        "cond_body_volatility": cond_body_volatility,
-        "cond_tail_basic": cond_tail_basic,
-        "cond_tail_relaxed": cond_tail_relaxed,
-
-        "tail_valid": tail_valid,
+        "tail_pct_of_close": tail_pct,
+        "cond_body_volatility": cond_body,
+        "cond_tail_basic": cond_basic,
+        "cond_tail_relaxed": cond_relaxed,
+        "tail_valid": (
+            cond_body and (cond_basic or cond_relaxed)
+        ),
         "special_case": special_case,
-
-        "normal_entry_price": normal_entry_price,
-        "special_entry_price": special_entry_price
+        "normal_entry_price": m["low"],
+        "special_entry_price": (
+            m["body_low"] + m["low"]
+        ) / 2,
     }
 
+
 def get_short_upper_tail_info(candle):
-    """
-    SOL 숏 진입용 윗꼬리 정보를 계산합니다.
+    m = _link_tail_candle_metrics(candle)
 
-    윗꼬리:
-    - high - max(open, close)
+    body = m["body"]
+    upper_tail = m["upper_tail"]
 
-    몸통:
-    - |open - close|
-
-    꼬리 비율:
-    - 윗꼬리 / 몸통
-
-    꼬리 절대 크기:
-    - 윗꼬리 / close
-
-    숏 기준 캔들 기본 조건:
-    - 몸통 변동성 > 0.3%
-    - 아래 두 조건 경로 중 하나를 충족해야 함
-
-      기본 경로:
-      - 꼬리 / 몸통 > 0.20
-      - 윗꼬리 > 종가의 0.15%
-
-      완화 경로:
-      - 꼬리 / 몸통 > 0.15
-      - 윗꼬리 > 종가의 0.20%
-
-    숏 특별 케이스:
-    - 몸통 변동성 > 0.95%
-    - 꼬리 / 몸통 > 0.15
-    - 그리고 아래 둘 중 하나:
-      1. 꼬리 / 몸통 > 0.66
-      2. 윗꼬리 > 종가의 0.3%
-    """
-
-    # -------------------------------------------------
-    # OHLC 추출
-    # -------------------------------------------------
-    open_price = float(candle['open'])
-    close_price = float(candle['close'])
-    high_price = float(candle['high'])
-
-    # -------------------------------------------------
-    # 몸통 및 윗꼬리 계산
-    # -------------------------------------------------
-    # 몸통 크기: 양봉/음봉 모두 절대값 사용
-    body = abs(open_price - close_price)
-
-    # 몸통의 높은 가격
-    # 양봉이면 종가, 음봉이면 시가가 됩니다.
-    body_high = max(open_price, close_price)
-
-    # 윗꼬리 = 고가 - 몸통 상단
-    upper_tail = high_price - body_high
-
-    # -------------------------------------------------
-    # 꼬리 비율 계산
-    # -------------------------------------------------
-    # 몸통이 0인 도지봉은 꼬리/몸통 비율을 계산할 수 없으므로
-    # 0으로 처리합니다.
-    if body <= 0:
-        tail_ratio = 0.0
-    else:
-        tail_ratio = upper_tail / body
-
-    # -------------------------------------------------
-    # 종가 대비 윗꼬리 절대 크기 계산
-    # -------------------------------------------------
-    if close_price <= 0:
-        tail_pct_of_close = 0.0
-    else:
-        tail_pct_of_close = upper_tail / close_price
-
-    # -------------------------------------------------
-    # 몸통 변동성 계산
-    # -------------------------------------------------
-    # 몸통 변동성 = |시가 - 종가| / 시가
-    if open_price <= 0:
-        body_volatility = 0.0
-    else:
-        body_volatility = body / open_price
-
-    # -------------------------------------------------
-    # 숏 기본 꼬리 조건
-    # -------------------------------------------------
-    # 공통 조건:
-    # - 몸통 변동성 > 0.3%
-    cond_body_volatility = (
-        body_volatility > 0.003
+    tail_ratio = upper_tail / body if body > 0 else 0.0
+    tail_pct = (
+        upper_tail / m["close"]
+        if m["close"] > 0
+        else 0.0
     )
 
-    # 기본 경로:
-    # - 꼬리 비율 > 0.20
-    # - 윗꼬리 절대 크기 > 종가의 0.15%
-    cond_tail_basic = (
+    cond_body = m["body_volatility"] > 0.003
+
+    cond_basic = (
         tail_ratio > 0.20
-        and tail_pct_of_close > 0.0015
+        and tail_pct > 0.0015
     )
 
-    # 완화 경로:
-    # - 꼬리 비율 > 0.15
-    # - 윗꼬리 절대 크기 > 종가의 0.20%
-    cond_tail_relaxed = (
+    cond_relaxed = (
         tail_ratio > 0.15
-        and tail_pct_of_close > 0.002
+        and tail_pct > 0.002
     )
 
-    # 최종 기본 윗꼬리 조건
-    tail_valid = (
-        cond_body_volatility
-        and (
-            cond_tail_basic
-            or cond_tail_relaxed
-        )
-    )
-
-    # -------------------------------------------------
-    # 숏 특별 케이스
-    # -------------------------------------------------
-    # 1. 몸통 변동성 > 0.95%
-    # 2. 꼬리 비율 > 0.15
-    # 3. 꼬리 비율 > 0.66 또는
-    #    윗꼬리 절대 크기 > 종가의 0.3%
     special_case = (
-        body_volatility > 0.0095
+        m["body_volatility"] > 0.0095
         and tail_ratio > 0.15
         and (
             tail_ratio > 0.66
-            or tail_pct_of_close > 0.003
+            or tail_pct > 0.003
         )
     )
 
-    # -------------------------------------------------
-    # 일반 진입 기준
-    # -------------------------------------------------
-    # 일반 조건에서는 기준 캔들의 고가를 진입 기준으로 사용
-    normal_entry_price = high_price
-
-    # -------------------------------------------------
-    # 특별 케이스 진입 기준
-    # -------------------------------------------------
-    # 몸통 상단과 고가의 중간값을 사용합니다.
-    #
-    # 예시:
-    # O=100, H=105, L=99, C=102
-    # body_high = 102
-    # special_entry_price = (102 + 105) / 2 = 103.5
-    special_entry_price = (
-        body_high + high_price
-    ) / 2
-
     return {
-        "open": open_price,
-        "close": close_price,
-        "high": high_price,
-
-        "body": body,
-        "body_high": body_high,
-        "upper_tail": upper_tail,
-
+        **m,
         "tail_ratio": tail_ratio,
-        "tail_pct_of_close": tail_pct_of_close,
-        "body_volatility": body_volatility,
-
-        "cond_body_volatility": cond_body_volatility,
-        "cond_tail_basic": cond_tail_basic,
-        "cond_tail_relaxed": cond_tail_relaxed,
-
-        "tail_valid": tail_valid,
+        "tail_pct_of_close": tail_pct,
+        "cond_body_volatility": cond_body,
+        "cond_tail_basic": cond_basic,
+        "cond_tail_relaxed": cond_relaxed,
+        "tail_valid": (
+            cond_body and (cond_basic or cond_relaxed)
+        ),
         "special_case": special_case,
+        "normal_entry_price": m["high"],
+        "special_entry_price": (
+            m["body_high"] + m["high"]
+        ) / 2,
+    }
 
-        "normal_entry_price": normal_entry_price,
-        "special_entry_price": special_entry_price
+
+def _link_tail_signal_result(
+    side,
+    signal_type,
+    candle,
+    candle_name,
+    current_price,
+    tail_info,
+    entry_reference,
+    entry_trigger,
+    price_condition,
+    special_tp_price=None,
+):
+    return {
+        "signal": bool(price_condition),
+        "side": side,
+        "signal_type": signal_type,
+        "reason": (
+            f"{side} {signal_type} 조건 충족 | "
+            f"기준={candle_name}"
+            if price_condition
+            else (
+                f"{side} {signal_type} 기준봉 충족, "
+                "현재가 진입 조건 미충족"
+            )
+        ),
+
+        "current_price": float(current_price),
+
+        "base_candle_name": candle_name,
+        "base_candle_ts": int(candle["ts"]),
+        "base_candle_open": float(candle["open"]),
+        "base_candle_high": float(candle["high"]),
+        "base_candle_low": float(candle["low"]),
+        "base_candle_close": float(candle["close"]),
+
+        "base_bb_lower": float(candle["bb_lower"]),
+        "base_bb_upper": float(candle["bb_upper"]),
+
+        "body": float(tail_info["body"]),
+        "body_volatility": float(
+            tail_info["body_volatility"]
+        ),
+        "tail_ratio": float(tail_info["tail_ratio"]),
+        "tail_pct_of_close": float(
+            tail_info["tail_pct_of_close"]
+        ),
+        "tail_valid": bool(
+            tail_info.get("tail_valid", False)
+        ),
+
+        "tail_basic_condition": bool(
+            tail_info.get("cond_tail_basic", False)
+        ),
+        "tail_relaxed_condition": bool(
+            tail_info.get("cond_tail_relaxed", False)
+        ),
+        "body_volatility_condition": bool(
+            tail_info.get("cond_body_volatility", False)
+        ),
+
+        "special_case": signal_type == "special1",
+        "special_case_2": signal_type == "special2",
+        "special_case_3": signal_type == "special3",
+        "special_case_4": signal_type == "special4",
+
+        "entry_reference_price": float(entry_reference),
+        "entry_trigger_price": float(entry_trigger),
+        "current_price_condition": bool(price_condition),
+
+        "special_tp_price": (
+            float(special_tp_price)
+            if special_tp_price is not None
+            else None
+        ),
     }
 
 
 # =================================================
-# LINK 포지션 연동 SOL 꼬리 전략 조건 함수
+# 3. 스페셜3 — BB 조건 추가
+# =================================================
+
+def analyze_sol_link_special3(
+    df,
+    side,
+    current_price
+):
+    tail_function = (
+        get_long_lower_tail_info
+        if side == "long"
+        else get_short_upper_tail_info
+    )
+
+    # 직전봉 우선.
+    # 직전봉의 몸통 / 꼬리 / BB 조건 중 하나라도
+    # 실패하면 직2전봉을 확인합니다.
+    for candle_name, index in [
+        ("prev", -2),
+        ("prev2", -3),
+    ]:
+        candle = df.iloc[index]
+        info = tail_function(candle)
+
+        # -----------------------------------------
+        # 기준봉 당시의 BB 이탈 조건
+        # -----------------------------------------
+        if side == "long":
+            bb_condition = (
+                float(candle["low"])
+                < float(candle["bb_lower"])
+            )
+        else:
+            bb_condition = (
+                float(candle["high"])
+                > float(candle["bb_upper"])
+            )
+
+        # -----------------------------------------
+        # 기준봉 공통 조건
+        # 1. 몸통 변동성 >= 0.5%
+        # 2. 방향별 꼬리 / 몸통 >= 1/3
+        # 3. 방향별 BB 이탈
+        # -----------------------------------------
+        base_condition = (
+            info["body_volatility"] >= 0.005
+            and info["tail_ratio"] >= 1 / 3
+            and bb_condition
+        )
+
+        if not base_condition:
+            continue
+
+        # -----------------------------------------
+        # 몸통 변동성 0.7% 이상이면
+        # 기준봉 종가의 0.7%를 가격 간격으로 사용
+        # -----------------------------------------
+        capped = info["body_volatility"] >= 0.007
+
+        offset = (
+            float(candle["close"]) * 0.007
+            if capped
+            else info["body"]
+        )
+
+        # -----------------------------------------
+        # 현재가 진입 조건
+        # -----------------------------------------
+        if side == "long":
+            trigger = float(candle["low"]) - offset
+
+            price_condition = (
+                current_price <= trigger
+                if capped
+                else current_price < trigger
+            )
+        else:
+            trigger = float(candle["high"]) + offset
+
+            price_condition = (
+                current_price >= trigger
+                if capped
+                else current_price > trigger
+            )
+
+        # 첫 유효 기준봉을 선택한 뒤에는
+        # 현재가 미도달이어도 직2전봉으로 변경하지 않음.
+        if trigger <= 0 or not price_condition:
+            return None
+
+        result = _link_tail_signal_result(
+            side=side,
+            signal_type="special3",
+            candle=candle,
+            candle_name=candle_name,
+            current_price=current_price,
+            tail_info=info,
+            entry_reference=trigger,
+            entry_trigger=trigger,
+            price_condition=True,
+        )
+
+        result.update({
+            "base_bb_condition": bool(bb_condition),
+            "special3_bb_condition": bool(bb_condition),
+            "special3_offset": float(offset),
+            "special3_offset_capped": bool(capped),
+        })
+
+        return result
+
+    return None
+
+
+# =================================================
+# 4. 스페셜4
+# =================================================
+
+def analyze_sol_link_special4(
+    df,
+    side,
+    current_price
+):
+    # 확정봉 10개 + 현재 진행봉 1개
+    if len(df) < 11:
+        return None
+
+    prev_candle = df.iloc[-2]
+    prev = _link_tail_candle_metrics(prev_candle)
+
+    if prev["body"] <= 0:
+        return None
+
+    # 직전 확정봉의 방향과 실제 꼬리 확인
+    if side == "long":
+        confirm_tail = prev["lower_tail"]
+
+        confirm_condition = (
+            prev["close"] > prev["open"]
+            and confirm_tail >= prev["body"] * 0.50
+            and confirm_tail > prev["close"] * 0.0015
+        )
+    else:
+        confirm_tail = prev["upper_tail"]
+
+        confirm_condition = (
+            prev["close"] < prev["open"]
+            and confirm_tail >= prev["body"] * 0.50
+            and confirm_tail > prev["close"] * 0.0015
+        )
+
+    if not confirm_condition:
+        return None
+
+    # 직1전부터 직7전까지 최신 후보 우선 검사
+    for bars_ago in range(1, 8):
+        position = len(df) - 1 - bars_ago
+        candle = df.iloc[position]
+        m = _link_tail_candle_metrics(candle)
+
+        if m["body_volatility"] < 0.005:
+            continue
+
+        previous_3 = df.iloc[position - 3:position]
+        avg_volume = float(previous_3["volume"].mean())
+        base_volume = float(candle["volume"])
+
+        if avg_volume <= 0:
+            continue
+
+        if not base_volume >= avg_volume * 2:
+            continue
+
+        # 기준봉 다음부터 직전 확정봉까지 검사.
+        # 기준봉 자체와 현재 진행봉은 제외.
+        between = df.iloc[position + 1:-1]
+
+        if side == "long":
+            # 요청 식: high - close
+            reference_tail = m["high"] - m["close"]
+
+            tail_condition = (
+                reference_tail >= m["body"] * 0.60
+            )
+
+            invalidated = bool(
+                (between["close"] < m["open"]).any()
+            )
+
+            tp_price = m["high"]
+
+            # 기준 high가 현재가보다 높아야 롱 TP로 사용.
+            tp_valid = tp_price > current_price
+
+        else:
+            # 요청 식: close - low
+            reference_tail = m["close"] - m["low"]
+
+            tail_condition = (
+                reference_tail >= m["body"] * 0.60
+            )
+
+            invalidated = bool(
+                (between["close"] > m["open"]).any()
+            )
+
+            tp_price = m["low"]
+
+            # 기준 low가 현재가보다 낮아야 숏 TP로 사용.
+            tp_valid = tp_price < current_price
+
+        if (
+            not tail_condition
+            or invalidated
+            or not tp_valid
+        ):
+            continue
+
+        info = {
+            **m,
+            "tail_ratio": reference_tail / m["body"],
+            "tail_pct_of_close": (
+                reference_tail / m["close"]
+                if m["close"] > 0
+                else 0.0
+            ),
+        }
+
+        result = _link_tail_signal_result(
+            side=side,
+            signal_type="special4",
+            candle=candle,
+            candle_name=f"prev{bars_ago}",
+            current_price=current_price,
+            tail_info=info,
+            entry_reference=current_price,
+            entry_trigger=current_price,
+            price_condition=True,
+            special_tp_price=tp_price,
+        )
+
+        result.update({
+            "special4_base_volume": base_volume,
+            "special4_previous_3_avg_volume": avg_volume,
+            "special4_volume_multiple": (
+                base_volume / avg_volume
+            ),
+            "special4_confirm_tail_ratio": (
+                confirm_tail / prev["body"]
+            ),
+            "special4_confirm_tail_pct": (
+                confirm_tail / prev["close"]
+            ),
+            "special4_between_candles_count": len(between),
+        })
+
+        return result
+
+    return None
+
+
+# =================================================
+# 5. 통합 조건 분석
 # =================================================
 
 def analyze_sol_link_tail_signal(
@@ -7244,74 +7352,11 @@ def analyze_sol_link_tail_signal(
     side,
     df=None
 ):
-    """
-    LINK 포지션 방향에 맞춰 SOL 꼬리 진입 조건을 판단합니다.
+    if side not in ["long", "short"]:
+        raise ValueError(
+            "side는 'long' 또는 'short'이어야 합니다."
+        )
 
-    데이터 함수:
-    - get_candles_with_bb_current()
-    - 현재 진행 중인 봉 포함
-
-    인덱스 기준:
-    - df.iloc[-1]: 현재 진행 중인 SOL 봉
-    - df.iloc[-2]: 직전 확정봉
-    - df.iloc[-3]: 직전봉의 직전 확정봉
-
-    공통 최근 5개 확정봉 변동성 필터:
-    - 대상: df.iloc[-6:-1]
-    - 현재 진행 중인 봉은 제외
-    - 직전봉부터 직전 5번째 확정봉까지 포함
-    - 몸통 변동성 = |open - close| / open
-    - 최근 5개 확정봉 중 몸통 변동성이 0.5% 이상인 캔들이
-      하나 이상 있어야 모든 진입 조건이 통과함
-
-    일반 / 스페셜1 기준봉:
-    - 직전봉 우선
-    - 직전봉이 조건을 충족하지 않을 때 직2전봉 사용
-
-    롱 일반 / 스페셜1:
-    - 기준봉 low < 기준봉 bb_lower
-    - 아래꼬리 조건 충족
-    - 현재가 <= 기준가 × 1.0003에서 진입
-
-    숏 일반 / 스페셜1:
-    - 기준봉 high > 기준봉 bb_upper
-    - 윗꼬리 조건 충족
-    - 현재가 >= 기준가 × 0.9997에서 진입
-
-    스페셜1:
-    - 기준봉 몸통 변동성 > 0.95%
-    - tail_ratio > 0.15
-    - tail_ratio > 0.66 또는 tail_pct_of_close > 0.3%
-    - 롱 진입 기준: 몸통 하단과 저가의 중간값
-    - 숏 진입 기준: 몸통 상단과 고가의 중간값
-    - TP: 기준 캔들의 시가
-
-    스페셜2 롱:
-    - 직전봉 아래꼬리 / 몸통 > 60%
-    - 직전봉 아래꼬리 > 종가의 0.2%
-    - 직2전봉 몸통 변동성 >= 0.65%
-    - 직2전봉 종가 < 직2전봉 당시 bb_lower
-    - 현재가에서 즉시 롱 진입
-    - 첫 SOL 포지션일 때 TP +1%
-
-    스페셜2 숏:
-    - 직전봉 윗꼬리 / 몸통 > 60%
-    - 직전봉 윗꼬리 > 종가의 0.2%
-    - 직2전봉 몸통 변동성 >= 0.65%
-    - 직2전봉 종가 > 직2전봉 당시 bb_upper
-    - 현재가에서 즉시 숏 진입
-    - 첫 SOL 포지션일 때 TP -1%
-    """
-
-    # -------------------------------------------------
-    # side 검증
-    # -------------------------------------------------
-    if side not in ['long', 'short']:
-        raise ValueError("side는 'long' 또는 'short'이어야 합니다.")
-
-    # -------------------------------------------------
-    # 현재봉 포함 SOL 데이터 조회
-    # -------------------------------------------------
     if df is None:
         df = get_candles_with_bb_current(
             symbol=symbol,
@@ -7319,671 +7364,268 @@ def analyze_sol_link_tail_signal(
             count=100
         )
 
-    # 현재봉, 직전봉, 직2전봉, 최근 5개 확정봉이 필요
-    if df is None or len(df) < 6:
+    # 현재봉 1개 + 최근 확정봉 6개 필요
+    if df is None or len(df) < 7:
         return {
             "signal": False,
             "side": side,
-            "reason": "SOL 캔들 데이터 부족",
             "signal_type": "none",
+            "reason": "SOL 캔들 데이터 부족",
             "special_case": False,
-            "special_case_2": False
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
         }
 
-    # -------------------------------------------------
-    # 현재봉 / 직전 확정봉 / 직2전 확정봉
-    # -------------------------------------------------
     current_candle = df.iloc[-1]
     prev_candle = df.iloc[-2]
     prev2_candle = df.iloc[-3]
 
-    # 현재 진행 중인 봉의 최신 close를 현재 가격으로 사용
-    current_price = float(current_candle['close'])
+    # 기존 방식 유지:
+    # 현재 진행봉의 최신 close를 신호 판정 가격으로 사용.
+    current_price = float(current_candle["close"])
 
-    # =================================================
-    # 최근 5개 확정봉 몸통 변동성 필터
-    # =================================================
-    # 현재 진행 중인 -1 봉은 제외합니다.
-    #
-    # df.iloc[-6:-1] 포함 범위:
-    # -6, -5, -4, -3, -2
-    #
-    # 즉 직전봉(-2)부터 직전 5번째 확정봉(-6)까지
-    # 총 5개 확정봉을 검사합니다.
-    last_5_confirmed = df.iloc[-6:-1]
+    # =============================================
+    # 최근 6개 확정봉 공통 변동성 필터
+    # =============================================
+    # 기존 변수명 유지, 실제 검사 개수는 6개.
+    last_5_confirmed = df.iloc[-7:-1]
 
-    # 각 캔들의 몸통 변동성:
-    # |open - close| / open
     last_5_body_volatility = (
-        abs(
-            last_5_confirmed['open']
-            - last_5_confirmed['close']
-        )
-        / last_5_confirmed['open']
+        (
+            last_5_confirmed["open"]
+            - last_5_confirmed["close"]
+        ).abs()
+        / last_5_confirmed["open"]
     )
 
-    # 최근 5개 확정봉 중 몸통 변동성이
-    # 0.5% 이상인 캔들이 하나라도 있는지 확인
-    cond_last_5_high_volatility = bool(
-        (last_5_body_volatility >= 0.005).any()
-    )
+    high_volatility = last_5_body_volatility >= 0.005
 
-    # 0.5% 이상 캔들의 개수
-    last_5_high_volatility_count = int(
-        (last_5_body_volatility >= 0.005).sum()
-    )
+    volatility_debug = {
+        "last_5_body_volatility_list": [
+            float(value)
+            for value in last_5_body_volatility.tolist()
+        ],
+        "last_5_max_body_volatility": float(
+            last_5_body_volatility.max()
+        ),
+        "last_5_high_volatility_count": int(
+            high_volatility.sum()
+        ),
+        "last_5_high_volatility_condition": bool(
+            high_volatility.any()
+        ),
+        "confirmed_volatility_candle_count": 6,
+    }
 
-    # 최근 5개 확정봉 중 최대 몸통 변동성
-    last_5_max_body_volatility = float(
-        last_5_body_volatility.max()
-    )
-
-    # 최근 5개 확정봉의 개별 몸통 변동성
-    last_5_body_volatility_list = [
-        float(value)
-        for value in last_5_body_volatility.tolist()
-    ]
-
-    # -------------------------------------------------
-    # 최근 5개 확정봉 변동성 조건 미충족 시 진입 금지
-    # -------------------------------------------------
-    # 이 필터는 일반 / 스페셜1 / 스페셜2 모두에 공통 적용됩니다.
-    if not cond_last_5_high_volatility:
+    if not high_volatility.any():
         return {
             "signal": False,
             "side": side,
             "signal_type": "none",
             "reason": (
-                "최근 5개 확정봉 중 몸통 변동성 0.5% 이상 "
-                "캔들이 없어 진입 금지"
+                "최근 6개 확정봉 중 몸통 변동성 "
+                "0.5% 이상 봉이 없어 진입 금지"
             ),
-            "current_price": float(current_price),
+            "current_price": current_price,
             "special_case": False,
             "special_case_2": False,
-
-            # 최근 5개 확정봉 변동성 디버그 정보
-            "last_5_body_volatility_list": (
-                last_5_body_volatility_list
-            ),
-            "last_5_max_body_volatility": (
-                last_5_max_body_volatility
-            ),
-            "last_5_high_volatility_count": (
-                last_5_high_volatility_count
-            ),
-            "last_5_high_volatility_condition": (
-                cond_last_5_high_volatility
-            )
+            "special_case_3": False,
+            "special_case_4": False,
+            **volatility_debug,
         }
 
-    # =================================================
-    # 스페셜 2 조건 확인
-    # =================================================
-    # 스페셜2는 일반 및 스페셜1보다 우선합니다.
-    # 충족 시 기준 가격 재도달을 기다리지 않고
-    # 현재가에서 즉시 시장가 진입합니다.
+    # =============================================
+    # 스페셜3
+    # =============================================
+    result = analyze_sol_link_special3(
+        df=df,
+        side=side,
+        current_price=current_price
+    )
 
-    if side == 'long':
-        # -------------------------------------------------
-        # 직전봉 아래꼬리 정보
-        # -------------------------------------------------
-        prev_tail_info = get_long_lower_tail_info(
-            prev_candle
-        )
+    if result is not None:
+        result.update(volatility_debug)
+        return result
 
-        # -------------------------------------------------
-        # 직2전봉 몸통 변동성 정보
-        # -------------------------------------------------
-        prev2_tail_info = get_long_lower_tail_info(
-            prev2_candle
-        )
+    # =============================================
+    # 스페셜4
+    # =============================================
+    result = analyze_sol_link_special4(
+        df=df,
+        side=side,
+        current_price=current_price
+    )
 
-        # -------------------------------------------------
-        # 스페셜2 직전봉 꼬리 조건
-        # -------------------------------------------------
-        # 아래꼬리 / 몸통 > 60%
-        # 아래꼬리 > 종가의 0.2%
-        cond_special2_prev_tail = (
-            prev_tail_info["tail_ratio"] > 0.60
-            and prev_tail_info["tail_pct_of_close"] > 0.002
-        )
+    if result is not None:
+        result.update(volatility_debug)
+        return result
 
-        # -------------------------------------------------
-        # 스페셜2 직2전봉 몸통 변동성 조건
-        # -------------------------------------------------
-        # 직2전봉 몸통 변동성 >= 0.65%
-        cond_special2_prev2_volatility = (
-            prev2_tail_info["body_volatility"] >= 0.0065
-        )
+    # =============================================
+    # 기존 스페셜2
+    # =============================================
+    tail_function = (
+        get_long_lower_tail_info
+        if side == "long"
+        else get_short_upper_tail_info
+    )
 
-        # -------------------------------------------------
-        # 스페셜2 직2전봉 볼린저 하단 조건
-        # -------------------------------------------------
-        # 직2전봉 종가가 당시 볼린저 하단보다 낮아야 함
-        prev2_close = float(prev2_candle['close'])
-        prev2_bb_lower = float(prev2_candle['bb_lower'])
+    prev_info = tail_function(prev_candle)
+    prev2_info = tail_function(prev2_candle)
 
-        cond_special2_prev2_bb = (
-            prev2_close < prev2_bb_lower
-        )
+    cond_special2_prev_tail = (
+        prev_info["tail_ratio"] > 0.60
+        and prev_info["tail_pct_of_close"] > 0.002
+    )
 
-        # -------------------------------------------------
-        # 롱 스페셜2 최종 조건
-        # -------------------------------------------------
-        special2_signal = (
-            cond_special2_prev_tail
-            and cond_special2_prev2_volatility
-            and cond_special2_prev2_bb
-        )
+    cond_special2_prev2_volatility = (
+        prev2_info["body_volatility"] >= 0.0065
+    )
 
+    prev2_close = float(prev2_candle["close"])
+
+    if side == "long":
+        prev2_bb = float(prev2_candle["bb_lower"])
+        cond_special2_prev2_bb = prev2_close < prev2_bb
     else:
-        # -------------------------------------------------
-        # 직전봉 윗꼬리 정보
-        # -------------------------------------------------
-        prev_tail_info = get_short_upper_tail_info(
-            prev_candle
+        prev2_bb = float(prev2_candle["bb_upper"])
+        cond_special2_prev2_bb = prev2_close > prev2_bb
+
+    if (
+        cond_special2_prev_tail
+        and cond_special2_prev2_volatility
+        and cond_special2_prev2_bb
+    ):
+        result = _link_tail_signal_result(
+            side=side,
+            signal_type="special2",
+            candle=prev_candle,
+            candle_name="prev",
+            current_price=current_price,
+            tail_info=prev_info,
+            entry_reference=current_price,
+            entry_trigger=current_price,
+            price_condition=True,
         )
 
-        # -------------------------------------------------
-        # 직2전봉 몸통 변동성 정보
-        # -------------------------------------------------
-        prev2_tail_info = get_short_upper_tail_info(
-            prev2_candle
-        )
-
-        # -------------------------------------------------
-        # 스페셜2 직전봉 꼬리 조건
-        # -------------------------------------------------
-        # 윗꼬리 / 몸통 > 60%
-        # 윗꼬리 > 종가의 0.2%
-        cond_special2_prev_tail = (
-            prev_tail_info["tail_ratio"] > 0.60
-            and prev_tail_info["tail_pct_of_close"] > 0.002
-        )
-
-        # -------------------------------------------------
-        # 스페셜2 직2전봉 몸통 변동성 조건
-        # -------------------------------------------------
-        # 직2전봉 몸통 변동성 >= 0.65%
-        cond_special2_prev2_volatility = (
-            prev2_tail_info["body_volatility"] >= 0.0065
-        )
-
-        # -------------------------------------------------
-        # 스페셜2 직2전봉 볼린저 상단 조건
-        # -------------------------------------------------
-        # 직2전봉 종가가 당시 볼린저 상단보다 높아야 함
-        prev2_close = float(prev2_candle['close'])
-        prev2_bb_upper = float(prev2_candle['bb_upper'])
-
-        cond_special2_prev2_bb = (
-            prev2_close > prev2_bb_upper
-        )
-
-        # -------------------------------------------------
-        # 숏 스페셜2 최종 조건
-        # -------------------------------------------------
-        special2_signal = (
-            cond_special2_prev_tail
-            and cond_special2_prev2_volatility
-            and cond_special2_prev2_bb
-        )
-
-    # -------------------------------------------------
-    # 스페셜2 충족 시 즉시 반환
-    # -------------------------------------------------
-    if special2_signal:
-        return {
-            "signal": True,
-            "side": side,
-            "signal_type": "special2",
-            "reason": (
-                f"{side} 스페셜2 즉시 진입 조건 충족 | "
-                f"직전봉 꼬리비율="
-                f"{prev_tail_info['tail_ratio'] * 100:.2f}% | "
-                f"직2전봉 몸통변동성="
-                f"{prev2_tail_info['body_volatility'] * 100:.2f}%"
-            ),
-
-            # 현재가 즉시 진입
-            "current_price": float(current_price),
-
-            # 스페셜2의 기준봉은 직전봉
-            "base_candle_name": "prev",
-            "base_candle_ts": int(prev_candle['ts']),
-            "base_candle_open": float(prev_candle['open']),
-            "base_candle_high": float(prev_candle['high']),
-            "base_candle_low": float(prev_candle['low']),
-            "base_candle_close": float(prev_candle['close']),
-
-            # 직전봉 당시 BB 값도 기록
-            "base_bb_lower": float(prev_candle['bb_lower']),
-            "base_bb_upper": float(prev_candle['bb_upper']),
-
-            # 직전봉 꼬리 정보
-            "body": float(prev_tail_info["body"]),
-            "body_volatility": float(
-                prev_tail_info["body_volatility"]
-            ),
-            "tail_ratio": float(
-                prev_tail_info["tail_ratio"]
-            ),
-            "tail_pct_of_close": float(
-                prev_tail_info["tail_pct_of_close"]
-            ),
-
-            # 현재가에서 즉시 진입이므로
-            # 별도의 과거 가격 트리거는 없음
-            "entry_reference_price": float(current_price),
-            "entry_trigger_price": float(current_price),
-            "current_price_condition": True,
-
-            # 스페셜1은 False
-            "special_case": False,
-
-            # 스페셜2는 True
-            "special_case_2": True,
-
-            # 스페셜2 TP는 전략 함수에서 ±1%로 계산
-            "special_tp_price": None,
-
-            # -------------------------------------------------
-            # 최근 5개 확정봉 변동성 정보
-            # -------------------------------------------------
-            "last_5_body_volatility_list": (
-                last_5_body_volatility_list
-            ),
-            "last_5_max_body_volatility": (
-                last_5_max_body_volatility
-            ),
-            "last_5_high_volatility_count": (
-                last_5_high_volatility_count
-            ),
-            "last_5_high_volatility_condition": (
-                cond_last_5_high_volatility
-            ),
-
-            # -------------------------------------------------
-            # 스페셜2 디버그 정보
-            # -------------------------------------------------
+        result.update({
+            **volatility_debug,
             "special2_prev_tail_ratio": float(
-                prev_tail_info["tail_ratio"]
+                prev_info["tail_ratio"]
             ),
             "special2_prev_tail_pct": float(
-                prev_tail_info["tail_pct_of_close"]
+                prev_info["tail_pct_of_close"]
             ),
             "special2_prev_tail_condition": bool(
                 cond_special2_prev_tail
             ),
-
             "special2_prev2_body_volatility": float(
-                prev2_tail_info["body_volatility"]
+                prev2_info["body_volatility"]
             ),
             "special2_prev2_volatility_condition": bool(
                 cond_special2_prev2_volatility
             ),
-
-            "special2_prev2_close": float(prev2_close),
-
+            "special2_prev2_close": prev2_close,
             "special2_prev2_bb_lower": (
-                float(prev2_bb_lower)
-                if side == 'long'
-                else None
+                prev2_bb if side == "long" else None
             ),
-
             "special2_prev2_bb_upper": (
-                float(prev2_bb_upper)
-                if side == 'short'
-                else None
+                prev2_bb if side == "short" else None
             ),
-
             "special2_prev2_bb_condition": bool(
                 cond_special2_prev2_bb
-            )
-        }
+            ),
+        })
 
-    # =================================================
-    # 일반 / 스페셜1 조건
-    # =================================================
-    # 기준 캔들은 직전봉 우선,
-    # 직전봉 조건 실패 시에만 직2전봉을 확인합니다.
-    base_candidates = [
+        return result
+
+    # =============================================
+    # 기존 일반 / 스페셜1
+    # =============================================
+    for candle_name, candle in [
         ("prev", prev_candle),
-        ("prev2", prev2_candle)
-    ]
+        ("prev2", prev2_candle),
+    ]:
+        info = tail_function(candle)
 
-    selected_candle = None
-    selected_name = None
-    selected_tail_info = None
-    selected_entry_reference = None
-    selected_tp_reference = None
-    selected_special_case = False
-    selected_bb_condition = False
-
-    # =================================================
-    # 롱 조건
-    # =================================================
-    if side == 'long':
-        for candle_name, candle in base_candidates:
-            candle_low = float(candle['low'])
-            bb_lower = float(candle['bb_lower'])
-
-            # 기준봉 저가가 볼린저 하단보다 낮아야 함
-            cond_bb_lower_break = (
-                candle_low < bb_lower
+        if side == "long":
+            bb_condition = (
+                float(candle["low"])
+                < float(candle["bb_lower"])
+            )
+        else:
+            bb_condition = (
+                float(candle["high"])
+                > float(candle["bb_upper"])
             )
 
-            # 아래꼬리 정보 계산
-            tail_info = get_long_lower_tail_info(
-                candle
-            )
+        if not (
+            bb_condition
+            and info["tail_valid"]
+        ):
+            continue
 
-            # BB 하단 이탈 + 아래꼬리 조건을
-            # 모두 만족하는 첫 기준봉을 선택
-            if (
-                cond_bb_lower_break
-                and tail_info["tail_valid"]
-            ):
-                selected_candle = candle
-                selected_name = candle_name
-                selected_tail_info = tail_info
-                selected_special_case = tail_info["special_case"]
-                selected_bb_condition = cond_bb_lower_break
+        is_special1 = info["special_case"]
 
-                # 스페셜1:
-                # 몸통 하단과 저가의 중간값을 진입 기준으로 사용
-                if selected_special_case:
-                    selected_entry_reference = (
-                        tail_info["special_entry_price"]
-                    )
-
-                    # 스페셜1 TP는 기준 캔들의 시가
-                    selected_tp_reference = float(
-                        candle['open']
-                    )
-
-                # 일반:
-                # 기준봉 저가를 진입 기준으로 사용
-                else:
-                    selected_entry_reference = (
-                        tail_info["normal_entry_price"]
-                    )
-
-                    # 일반 TP는 전략 함수에서 ±0.6%로 계산
-                    selected_tp_reference = None
-
-                # 직전봉 우선 조건이므로
-                # 첫 번째 충족 기준봉을 찾으면 중단
-                break
-
-        # 직전/직2전봉 모두 기준봉 조건 미충족
-        if selected_candle is None:
-            return {
-                "signal": False,
-                "side": side,
-                "signal_type": "none",
-                "reason": (
-                    "직전 2개 봉에 "
-                    "BB 하단 이탈 아래꼬리 기준봉 없음"
-                ),
-                "current_price": float(current_price),
-                "special_case": False,
-                "special_case_2": False,
-
-                # 최근 5개 확정봉 변동성 정보
-                "last_5_body_volatility_list": (
-                    last_5_body_volatility_list
-                ),
-                "last_5_max_body_volatility": (
-                    last_5_max_body_volatility
-                ),
-                "last_5_high_volatility_count": (
-                    last_5_high_volatility_count
-                ),
-                "last_5_high_volatility_condition": (
-                    cond_last_5_high_volatility
-                )
-            }
-
-        # 일반/스페셜1 롱 진입:
-        # 현재가가 기준가의 +0.03% 이하
-        entry_trigger_price = (
-            selected_entry_reference * 1.0003
+        entry_reference = (
+            info["special_entry_price"]
+            if is_special1
+            else info["normal_entry_price"]
         )
 
-        cond_current_price = (
-            current_price <= entry_trigger_price
-        )
-
-        signal = cond_current_price
-
-    # =================================================
-    # 숏 조건
-    # =================================================
-    else:
-        for candle_name, candle in base_candidates:
-            candle_high = float(candle['high'])
-            bb_upper = float(candle['bb_upper'])
-
-            # 기준봉 고가가 볼린저 상단보다 높아야 함
-            cond_bb_upper_break = (
-                candle_high > bb_upper
-            )
-
-            # 윗꼬리 정보 계산
-            tail_info = get_short_upper_tail_info(
-                candle
-            )
-
-            # BB 상단 이탈 + 윗꼬리 조건을
-            # 모두 만족하는 첫 기준봉을 선택
-            if (
-                cond_bb_upper_break
-                and tail_info["tail_valid"]
-            ):
-                selected_candle = candle
-                selected_name = candle_name
-                selected_tail_info = tail_info
-                selected_special_case = tail_info["special_case"]
-                selected_bb_condition = cond_bb_upper_break
-
-                # 스페셜1:
-                # 몸통 상단과 고가의 중간값을 진입 기준으로 사용
-                if selected_special_case:
-                    selected_entry_reference = (
-                        tail_info["special_entry_price"]
-                    )
-
-                    # 스페셜1 TP는 기준 캔들의 시가
-                    selected_tp_reference = float(
-                        candle['open']
-                    )
-
-                # 일반:
-                # 기준봉 고가를 진입 기준으로 사용
-                else:
-                    selected_entry_reference = (
-                        tail_info["normal_entry_price"]
-                    )
-
-                    # 일반 TP는 전략 함수에서 ±0.6%로 계산
-                    selected_tp_reference = None
-
-                # 직전봉 우선 조건이므로
-                # 첫 번째 충족 기준봉을 찾으면 중단
-                break
-
-        # 직전/직2전봉 모두 기준봉 조건 미충족
-        if selected_candle is None:
-            return {
-                "signal": False,
-                "side": side,
-                "signal_type": "none",
-                "reason": (
-                    "직전 2개 봉에 "
-                    "BB 상단 이탈 윗꼬리 기준봉 없음"
-                ),
-                "current_price": float(current_price),
-                "special_case": False,
-                "special_case_2": False,
-
-                # 최근 5개 확정봉 변동성 정보
-                "last_5_body_volatility_list": (
-                    last_5_body_volatility_list
-                ),
-                "last_5_max_body_volatility": (
-                    last_5_max_body_volatility
-                ),
-                "last_5_high_volatility_count": (
-                    last_5_high_volatility_count
-                ),
-                "last_5_high_volatility_condition": (
-                    cond_last_5_high_volatility
-                )
-            }
-
-        # 일반/스페셜1 숏 진입:
-        # 현재가가 기준가의 -0.03% 이상
-        entry_trigger_price = (
-            selected_entry_reference * 0.9997
-        )
-
-        cond_current_price = (
-            current_price >= entry_trigger_price
-        )
-
-        signal = cond_current_price
-
-    # =================================================
-    # 일반 / 스페셜1 결과 메시지0
-    # =================================================
-    if signal:
-        reason = (
-            f"{side} 꼬리 진입 조건 충족 | "
-            f"기준={selected_name} | "
-            f"{'스페셜1' if selected_special_case else '일반'}"
-        )
-    else:
-        reason = (
-            f"{side} 기준봉은 충족했으나 "
-            f"현재가가 진입 기준에 도달하지 않음"
-        )
-
-    # =================================================
-    # 일반 / 스페셜1 결과 반환
-    # =================================================
-    return {
-        "signal": signal,
-        "side": side,
-
-        # 일반 / 스페셜1 구분
-        "signal_type": (
-            "special1"
-            if selected_special_case
-            else "normal"
-        ),
-
-        "reason": reason,
-
-        # -------------------------------------------------
-        # 현재 진행 중인 SOL 봉 가격
-        # -------------------------------------------------
-        "current_price": float(current_price),
-
-        # -------------------------------------------------
-        # 최근 5개 확정봉 변동성 정보
-        # -------------------------------------------------
-        "last_5_body_volatility_list": (
-            last_5_body_volatility_list
-        ),
-        "last_5_max_body_volatility": (
-            last_5_max_body_volatility
-        ),
-        "last_5_high_volatility_count": (
-            last_5_high_volatility_count
-        ),
-        "last_5_high_volatility_condition": (
-            cond_last_5_high_volatility
-        ),
-
-        # -------------------------------------------------
-        # 선택된 기준봉 정보
-        # -------------------------------------------------
-        "base_candle_name": selected_name,
-        "base_candle_ts": int(selected_candle['ts']),
-        "base_candle_open": float(selected_candle['open']),
-        "base_candle_high": float(selected_candle['high']),
-        "base_candle_low": float(selected_candle['low']),
-        "base_candle_close": float(selected_candle['close']),
-
-        # -------------------------------------------------
-        # 기준봉 당시 볼린저 밴드
-        # -------------------------------------------------
-        "base_bb_lower": float(selected_candle['bb_lower']),
-        "base_bb_upper": float(selected_candle['bb_upper']),
-        "base_bb_condition": bool(selected_bb_condition),
-
-        # -------------------------------------------------
-        # 선택된 기준봉 꼬리 정보
-        # -------------------------------------------------
-        "body": float(selected_tail_info["body"]),
-        "body_volatility": float(
-            selected_tail_info["body_volatility"]
-        ),
-        "tail_ratio": float(
-            selected_tail_info["tail_ratio"]
-        ),
-        "tail_pct_of_close": float(
-            selected_tail_info["tail_pct_of_close"]
-        ),
-        "tail_valid": bool(
-            selected_tail_info["tail_valid"]
-        ),
-
-        # 기본/완화 경로 확인용
-        "tail_basic_condition": bool(
-            selected_tail_info["cond_tail_basic"]
-        ),
-        "tail_relaxed_condition": bool(
-            selected_tail_info["cond_tail_relaxed"]
-        ),
-        "body_volatility_condition": bool(
-            selected_tail_info["cond_body_volatility"]
-        ),
-
-        # -------------------------------------------------
-        # 진입 기준 정보
-        # -------------------------------------------------
-        "special_case": bool(selected_special_case),
-        "special_case_2": False,
-
-        "entry_reference_price": float(
-            selected_entry_reference
-        ),
-        "entry_trigger_price": float(
-            entry_trigger_price
-        ),
-        "current_price_condition": bool(
-            cond_current_price
-        ),
-
-        # -------------------------------------------------
-        # 스페셜1 TP 기준
-        # -------------------------------------------------
-        # 일반 케이스이면 None
-        "special_tp_price": (
-            float(selected_tp_reference)
-            if selected_tp_reference is not None
+        special_tp = (
+            float(candle["open"])
+            if is_special1
             else None
         )
+
+        if side == "long":
+            entry_trigger = entry_reference * 1.0003
+            price_condition = current_price <= entry_trigger
+        else:
+            entry_trigger = entry_reference * 0.9997
+            price_condition = current_price >= entry_trigger
+
+        # 첫 유효 기준봉을 선택한 뒤 바로 반환.
+        # 현재가 미도달이어도 직2전봉으로 바꾸지 않음.
+        result = _link_tail_signal_result(
+            side=side,
+            signal_type=(
+                "special1" if is_special1 else "normal"
+            ),
+            candle=candle,
+            candle_name=candle_name,
+            current_price=current_price,
+            tail_info=info,
+            entry_reference=entry_reference,
+            entry_trigger=entry_trigger,
+            price_condition=price_condition,
+            special_tp_price=special_tp,
+        )
+
+        result["base_bb_condition"] = bool(bb_condition)
+        result.update(volatility_debug)
+        return result
+
+    return {
+        "signal": False,
+        "side": side,
+        "signal_type": "none",
+        "reason": (
+            "스페셜3/4/2 및 일반/스페셜1 "
+            "진입 조건 미충족"
+        ),
+        "current_price": current_price,
+        "special_case": False,
+        "special_case_2": False,
+        "special_case_3": False,
+        "special_case_4": False,
+        **volatility_debug,
     }
 
-# =================================================
-# 3. LINK 포지션 연동 SOL 꼬리 전략 실행 함수
-# =================================================
 
 # =================================================
-# 3. LINK 포지션 연동 SOL 꼬리 전략 실행 함수
+# 6. LINK 포지션 연동 SOL 꼬리 전략 실행
 # =================================================
 
 def trade_link_tail_strategy(
@@ -7993,31 +7635,6 @@ def trade_link_tail_strategy(
     side,
     tp_pct=0.006
 ):
-    """
-    LINK 포지션 방향을 기준으로 SOL 꼬리 전략을 실행합니다.
-
-    side='long':
-    - LINK 롱 보유 시 SOL 롱 전략 활성화
-    - SOL 아래꼬리 + BB 하단 이탈 조건 사용
-
-    side='short':
-    - LINK 숏 보유 시 SOL 숏 전략 활성화
-    - SOL 윗꼬리 + BB 상단 이탈 조건 사용
-
-    공통:
-    - LINK 수량 × 60을 SOL 동일 방향 보유 한도로 사용
-    - 가용 USDT의 50% × 레버리지로 주문
-    - 일반 케이스 TP: SOL 진입가 기준 ±0.6%
-    - 스페셜1 TP: 기준 SOL 캔들 시가
-    - 스페셜2 TP: SOL 진입가 기준 ±1.0%
-    - SL 주문 없음
-
-    TP 주문 규칙:
-    - 주문 전 동일 방향 SOL 포지션이 없을 때만 TP 주문 생성
-    - 이미 동일 방향 SOL 포지션이 있으면 추가 진입만 수행
-    - 추가 진입 시 기존 TP 주문은 수정하거나 새로 생성하지 않음
-    """
-
     global last_link_tail_long_trade_time
     global last_link_tail_short_trade_time
     global last_link_tail_long_15m
@@ -8027,198 +7644,142 @@ def trade_link_tail_strategy(
 
     now = time.time()
 
-    # =================================================
-    # side별 쿨다운
-    # =================================================
-    if side == 'long':
+    # =============================================
+    # 기존 쿨다운 숫자 유지
+    # =============================================
+    if side == "long":
         if now - last_link_tail_long_trade_time < 1800:
             print(
                 f"[{symbol} LINK_TAIL_LONG] "
-                f"60초 공통 쿨다운 중 진입 금지"
+                "1800초 공통 쿨다운 중 진입 금지"
             )
             return
 
-        # 15분봉 전략 쿨다운: 15분
         if (
-            timeframe == '15m'
+            timeframe == "15m"
             and now - last_link_tail_long_15m < 1800
         ):
-            minutes_ago = (
-                now - last_link_tail_long_15m
-            ) / 60
-
             print(
                 f"[{symbol} LINK_TAIL_LONG 15m] "
-                f"최근 {minutes_ago:.1f}분 전에 매수됨 "
-                f"(15분 내 중복매수 금지)"
+                "1800초 타임프레임 쿨다운 중 진입 금지"
             )
             return
 
-        # 1시간봉 전략 쿨다운: 1시간
         if (
-            timeframe == '1h'
+            timeframe == "1h"
             and now - last_link_tail_long_1h < 7200
         ):
-            minutes_ago = (
-                now - last_link_tail_long_1h
-            ) / 60
-
             print(
                 f"[{symbol} LINK_TAIL_LONG 1h] "
-                f"최근 {minutes_ago:.1f}분 전에 매수됨 "
-                f"(1시간 내 중복매수 금지)"
+                "7200초 타임프레임 쿨다운 중 진입 금지"
             )
             return
 
-    elif side == 'short':
+    elif side == "short":
         if now - last_link_tail_short_trade_time < 2700:
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
-                f"60초 공통 쿨다운 중 진입 금지"
+                "2700초 공통 쿨다운 중 진입 금지"
             )
             return
 
-        # 15분봉 전략 쿨다운: 15분
         if (
-            timeframe == '15m'
+            timeframe == "15m"
             and now - last_link_tail_short_15m < 2700
         ):
-            minutes_ago = (
-                now - last_link_tail_short_15m
-            ) / 60
-
             print(
                 f"[{symbol} LINK_TAIL_SHORT 15m] "
-                f"최근 {minutes_ago:.1f}분 전에 매도됨 "
-                f"(15분 내 중복매도 금지)"
+                "2700초 타임프레임 쿨다운 중 진입 금지"
             )
             return
 
-        # 1시간봉 전략 쿨다운: 1시간
         if (
-            timeframe == '1h'
+            timeframe == "1h"
             and now - last_link_tail_short_1h < 7200
         ):
-            minutes_ago = (
-                now - last_link_tail_short_1h
-            ) / 60
-
             print(
                 f"[{symbol} LINK_TAIL_SHORT 1h] "
-                f"최근 {minutes_ago:.1f}분 전에 매도됨 "
-                f"(1시간 내 중복매도 금지)"
+                "7200초 타임프레임 쿨다운 중 진입 금지"
             )
             return
 
     else:
-        raise ValueError("side는 'long' 또는 'short'이어야 합니다.")
+        raise ValueError(
+            "side는 'long' 또는 'short'이어야 합니다."
+        )
 
-    # =================================================
-    # 증거금 및 계좌 잔고 확인
-    # =================================================
+    # =============================================
+    # 기존 증거금 / 잔고 로직 그대로 유지
+    # =============================================
     set_margin_and_leverage(symbol)
 
     available_usdt = get_available_usdt()
 
-    if available_usdt < 2500 or available_usdt > 12000:
+    if available_usdt < 2000 or available_usdt > 7000:
         print(
             f"[{symbol} LINK_TAIL] "
             f"계좌 잔고 {available_usdt:.2f} USD "
-            f"범위 밖이므로 진입 금지"
+            "범위 밖이므로 진입 금지"
         )
         return
 
-    # =================================================
-    # LINK / SOL 포지션 확인
-    # =================================================
-    link_position = get_position_amount('LINK/USDT')
+    # =============================================
+    # 기존 LINK / SOL 포지션 확인
+    # =============================================
+    link_position = get_position_amount("LINK/USDT")
     sol_position = get_position_amount(symbol)
 
-    # LINK 절대 수량
     n_link = abs(link_position)
+    sol_threshold = 50 * n_link
 
-    # LINK 수량 기준 SOL 최대 보유 가능 수량
-    sol_threshold = 60 * n_link
-
-    # 주문 전에 동일 방향 SOL 포지션이 있었는지 기록
-    # 주문 후 TP 생성 여부를 결정하는 데 사용
-    had_existing_same_side_position = False
-
-    if side == 'long':
-        # LINK 롱 보유 시에만 SOL 롱 전략 실행
+    if side == "long":
         if link_position <= 0:
             print(
                 f"[{symbol} LINK_TAIL_LONG] "
-                f"LINK 롱 포지션 없음"
+                "LINK 롱 포지션 없음"
             )
             return
 
-        # 현재 SOL 롱 보유량
         current_sol = (
-            sol_position
-            if sol_position > 0
-            else 0
+            sol_position if sol_position > 0 else 0
         )
-
-        # 주문 전에 SOL 롱이 있었는지 확인
-        had_existing_same_side_position = current_sol > 0
-
-        print(
-            f"[{symbol} LINK_TAIL_LONG] "
-            f"LINK={n_link}, "
-            f"SOL롱={current_sol}, "
-            f"기준={sol_threshold}, "
-            f"기존롱={had_existing_same_side_position}"
-        )
-
-        # 기존 SOL 롱 보유량이 LINK 수량 × 60을 초과하면 추가 매수 금지
-        if current_sol > sol_threshold:
-            print(
-                f"[{symbol} LINK_TAIL_LONG] "
-                f"SOL 롱 보유량이 기준 초과"
-            )
-            return
 
     else:
-        # LINK 숏 보유 시에만 SOL 숏 전략 실행
         if link_position >= 0:
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
-                f"LINK 숏 포지션 없음"
+                "LINK 숏 포지션 없음"
             )
             return
 
-        # 현재 SOL 숏 보유량
         current_sol = (
-            -sol_position
-            if sol_position < 0
-            else 0
+            -sol_position if sol_position < 0 else 0
         )
 
-        # 주문 전에 SOL 숏이 있었는지 확인
-        had_existing_same_side_position = current_sol > 0
+    had_existing_same_side_position = current_sol > 0
 
+    print(
+        f"[{symbol} LINK_TAIL_{side.upper()}] "
+        f"LINK={n_link}, "
+        f"SOL동일방향={current_sol}, "
+        f"기준={sol_threshold}, "
+        f"기존포지션={had_existing_same_side_position}"
+    )
+
+    # 기존 방식 유지:
+    # 주문 전 보유량이 기준을 초과한 경우만 차단.
+    if current_sol > sol_threshold:
         print(
-            f"[{symbol} LINK_TAIL_SHORT] "
-            f"LINK={n_link}, "
-            f"SOL숏={current_sol}, "
-            f"기준={sol_threshold}, "
-            f"기존숏={had_existing_same_side_position}"
+            f"[{symbol} LINK_TAIL_{side.upper()}] "
+            "SOL 동일 방향 보유량이 기준 초과"
         )
+        return
 
-        # 기존 SOL 숏 보유량이 LINK 수량 × 60을 초과하면 추가 매도 금지
-        if current_sol > sol_threshold:
-            print(
-                f"[{symbol} LINK_TAIL_SHORT] "
-                f"SOL 숏 보유량이 기준 초과"
-            )
-            return
-
-    # =================================================
-    # SOL 현재가 및 주문 수량 계산
-    # =================================================
+    # =============================================
+    # 기존 현재가 / 주문 수량 계산
+    # =============================================
     current_price = float(
-        exchange.fetch_ticker(symbol)['last']
+        exchange.fetch_ticker(symbol)["last"]
     )
 
     if current_price <= 0:
@@ -8228,34 +7789,26 @@ def trade_link_tail_strategy(
         )
         return
 
-    # 가용 USDT의 50%를 증거금으로 사용
     margin_to_use = available_usdt * 0.5
-
-    # 레버리지 적용 명목 금액
     notional = margin_to_use * LEVERAGE
-
-    # SOL 주문 수량 계산
     amount = round(notional / current_price, 3)
 
     if amount <= 0:
         print(
             f"[{symbol} LINK_TAIL] "
-            f"주문 수량이 0이라서 중단"
+            "주문 수량이 0이라서 중단"
         )
         return
 
-    # =================================================
-    # 현재봉 포함 SOL 데이터 조회
-    # =================================================
+    # =============================================
+    # SOL 캔들 조회 / 통합 조건 분석
+    # =============================================
     df_sol = get_candles_with_bb_current(
         symbol=symbol,
         timeframe=timeframe,
         count=100
     )
 
-    # =================================================
-    # SOL 꼬리 조건 분석
-    # =================================================
     tail_signal = analyze_sol_link_tail_signal(
         symbol=symbol,
         timeframe=timeframe,
@@ -8271,81 +7824,85 @@ def trade_link_tail_strategy(
     if not tail_signal or not tail_signal["signal"]:
         print(
             f"[{symbol} LINK_TAIL_{side.upper()}] "
-            f"꼬리 조건 불만족으로 진입 금지"
+            "꼬리 조건 불만족으로 진입 금지"
         )
         return
 
-    # =================================================
+    # =============================================
     # TP 가격 계산
-    # =================================================
-    # 이 블록에서는 TP 가격만 계산합니다.
-    # 실제 롱/숏 주문은 아래 별도 블록에서 실행합니다.
+    # =============================================
+    signal_type = tail_signal.get("signal_type")
 
-    # -------------------------------------------------
-    # 스페셜2 TP
-    # -------------------------------------------------
-    # 현재가 즉시 진입:
-    # - 롱: 실제 SOL 진입 기준 +1%
-    # - 숏: 실제 SOL 진입 기준 -1%
-    if tail_signal.get("signal_type") == "special2":
-        if side == 'long':
-            tp_price = current_price * 1.01
-        else:
-            tp_price = current_price * 0.99
+    # 신규 스페셜4
+    # 롱: 기준봉 high / 숏: 기준봉 low
+    if signal_type == "special4":
+        tp_price = float(
+            tail_signal["special_tp_price"]
+        )
 
-    # -------------------------------------------------
-    # 스페셜1 TP
-    # -------------------------------------------------
-    # 기준 꼬리 캔들의 시가를 TP로 사용
+        # 분석에 쓰인 현재봉 close와 ticker 가격이
+        # 다를 수 있으므로 주문 기준 가격으로 재확인.
+        if side == "long" and tp_price <= current_price:
+            print(
+                f"[{symbol} LINK_TAIL_LONG] "
+                "스페셜4 기준봉 high가 현재가 이하: "
+                "진입 금지"
+            )
+            return
+
+        if side == "short" and tp_price >= current_price:
+            print(
+                f"[{symbol} LINK_TAIL_SHORT] "
+                "스페셜4 기준봉 low가 현재가 이상: "
+                "진입 금지"
+            )
+            return
+
+    # 기존 스페셜2
+    elif signal_type == "special2":
+        tp_price = (
+            current_price * 1.01
+            if side == "long"
+            else current_price * 0.99
+        )
+
+    # 기존 스페셜1
     elif tail_signal["special_case"]:
-        tp_price = tail_signal["special_tp_price"]
+        tp_price = float(
+            tail_signal["special_tp_price"]
+        )
 
-        # 롱 TP가 현재가 이하이면 +0.6% TP로 보정
-        if side == 'long' and tp_price <= current_price:
+        if side == "long" and tp_price <= current_price:
             tp_price = current_price * (1 + tp_pct)
 
-        # 숏 TP가 현재가 이상이면 -0.6% TP로 보정
-        elif side == 'short' and tp_price >= current_price:
+        elif side == "short" and tp_price >= current_price:
             tp_price = current_price * (1 - tp_pct)
 
-    # -------------------------------------------------
-    # 일반 케이스 TP
-    # -------------------------------------------------
-    # 롱: 실제 SOL 진입 기준 +0.6%
-    # 숏: 실제 SOL 진입 기준 -0.6%
+    # 기존 일반 + 신규 스페셜3
     else:
-        if side == 'long':
-            tp_price = current_price * (1 + tp_pct)
-        else:
-            tp_price = current_price * (1 - tp_pct)
+        tp_price = (
+            current_price * (1 + tp_pct)
+            if side == "long"
+            else current_price * (1 - tp_pct)
+        )
 
-    # =================================================
-    # SOL 롱 주문
-    # =================================================
-    if side == 'long':
-        # SOL 시장가 매수
+    # =============================================
+    # 기존 SOL 롱 주문 / 쿨다운 갱신 / TP
+    # =============================================
+    if side == "long":
         exchange.create_market_buy_order(
             symbol,
             amount
         )
 
-        # -------------------------------------------------
-        # 롱 전략 쿨다운 갱신
-        # -------------------------------------------------
         last_link_tail_long_trade_time = time.time()
 
-        if timeframe == '15m':
+        if timeframe == "15m":
             last_link_tail_long_15m = time.time()
 
-        elif timeframe == '1h':
+        elif timeframe == "1h":
             last_link_tail_long_1h = time.time()
 
-        # -------------------------------------------------
-        # TP 주문 생성
-        # -------------------------------------------------
-        # 주문 전에 SOL 롱이 없던 경우에만 TP 주문 생성.
-        # 기존 SOL 롱이 있다면 추가 진입만 하고,
-        # 기존 TP 주문은 그대로 유지합니다.
         if not had_existing_same_side_position:
             place_tp_long(
                 symbol,
@@ -8355,54 +7912,43 @@ def trade_link_tail_strategy(
 
             print(
                 f"[{symbol} LINK_TAIL_LONG] "
-                f"꼬리 전략 롱 진입 "
-                f"(기존 SOL 롱 없음 / TP 생성) | "
+                "롱 진입 / TP 생성 | "
                 f"amount={amount} | "
                 f"price={current_price} | "
                 f"tp={tp_price} | "
-                f"signal_type={tail_signal.get('signal_type')} | "
+                f"signal_type={signal_type} | "
                 f"base={tail_signal['base_candle_name']}"
             )
 
         else:
             print(
                 f"[{symbol} LINK_TAIL_LONG] "
-                f"꼬리 전략 롱 추가 진입 "
-                f"(기존 TP 유지 / 새 TP 미생성) | "
+                "롱 추가 진입 / 기존 TP 유지 / "
+                "새 TP 미생성 | "
                 f"amount={amount} | "
                 f"price={current_price} | "
                 f"기존 SOL롱={current_sol} | "
-                f"signal_type={tail_signal.get('signal_type')} | "
+                f"signal_type={signal_type} | "
                 f"base={tail_signal['base_candle_name']}"
             )
 
-    # =================================================
-    # SOL 숏 주문
-    # =================================================
+    # =============================================
+    # 기존 SOL 숏 주문 / 쿨다운 갱신 / TP
+    # =============================================
     else:
-        # SOL 시장가 매도
         exchange.create_market_sell_order(
             symbol,
             amount
         )
 
-        # -------------------------------------------------
-        # 숏 전략 쿨다운 갱신
-        # -------------------------------------------------
         last_link_tail_short_trade_time = time.time()
 
-        if timeframe == '15m':
+        if timeframe == "15m":
             last_link_tail_short_15m = time.time()
 
-        elif timeframe == '1h':
+        elif timeframe == "1h":
             last_link_tail_short_1h = time.time()
 
-        # -------------------------------------------------
-        # TP 주문 생성
-        # -------------------------------------------------
-        # 주문 전에 SOL 숏이 없던 경우에만 TP 주문 생성.
-        # 기존 SOL 숏이 있다면 추가 진입만 하고,
-        # 기존 TP 주문은 그대로 유지합니다.
         if not had_existing_same_side_position:
             place_tp_short(
                 symbol,
@@ -8412,27 +7958,25 @@ def trade_link_tail_strategy(
 
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
-                f"꼬리 전략 숏 진입 "
-                f"(기존 SOL 숏 없음 / TP 생성) | "
+                "숏 진입 / TP 생성 | "
                 f"amount={amount} | "
                 f"price={current_price} | "
                 f"tp={tp_price} | "
-                f"signal_type={tail_signal.get('signal_type')} | "
+                f"signal_type={signal_type} | "
                 f"base={tail_signal['base_candle_name']}"
             )
 
         else:
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
-                f"꼬리 전략 숏 추가 진입 "
-                f"(기존 TP 유지 / 새 TP 미생성) | "
+                "숏 추가 진입 / 기존 TP 유지 / "
+                "새 TP 미생성 | "
                 f"amount={amount} | "
                 f"price={current_price} | "
                 f"기존 SOL숏={current_sol} | "
-                f"signal_type={tail_signal.get('signal_type')} | "
+                f"signal_type={signal_type} | "
                 f"base={tail_signal['base_candle_name']}"
             )
-
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
 
@@ -8697,7 +8241,7 @@ while True:
             # LINK 또는 ADA 보유 시:
             # LINK/ADA 연동 전략 및 close RSI 전략만 반복 실행
             # 현재봉 기준 LINK 꼬리 전략도 포함되어 있으므로 5초 간격 사용
-            time.sleep(5)
+            time.sleep(6)
             continue
 
         # -------------------------------------------------
