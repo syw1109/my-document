@@ -7082,7 +7082,7 @@ def _link_tail_signal_result(
 
 
 # =================================================
-# 3. 스페셜3 — BB 조건 추가
+# 3. 스페셜3 — 
 # =================================================
 
 def analyze_sol_link_special3(
@@ -7096,14 +7096,20 @@ def analyze_sol_link_special3(
         else get_short_upper_tail_info
     )
 
+    prev_candle = df.iloc[-2]
+    prev2_candle = df.iloc[-3]
+
+    # 진입 기준가격 비교에 사용할 두 확정봉의 종가
+    prev_close = float(prev_candle["close"])
+    prev2_close = float(prev2_candle["close"])
+
     # 직전봉 우선.
     # 직전봉의 몸통 / 꼬리 / BB 조건 중 하나라도
     # 실패하면 직2전봉을 확인합니다.
-    for candle_name, index in [
-        ("prev", -2),
-        ("prev2", -3),
+    for candle_name, candle in [
+        ("prev", prev_candle),
+        ("prev2", prev2_candle),
     ]:
-        candle = df.iloc[index]
         info = tail_function(candle)
 
         # -----------------------------------------
@@ -7135,23 +7141,34 @@ def analyze_sol_link_special3(
         if not base_condition:
             continue
 
-
         # -----------------------------------------
-        # 고정 가격 간격 몸통 변동성 크기와 무관하게 기준봉 종가의 0.65%를 사용합니다.
+        # 선택된 기준봉 종가의 0.65%
         # -----------------------------------------
         offset = float(candle["close"]) * 0.0065
-        
+
         # -----------------------------------------
-        # 현재가 진입 조건
-        # 롱: low - offset 도달 또는 하회
-        # 숏: high + offset 도달 또는 상회
+        # 진입 기준가격 및 현재가 조건
         # -----------------------------------------
         if side == "long":
-            trigger = float(candle["low"]) - offset
+            # 기준봉 low와 직전봉 / 직2전봉 close 중 최솟값
+            reference_price = min(
+                float(candle["low"]),
+                prev_close,
+                prev2_close,
+            )
+
+            trigger = reference_price - offset
             price_condition = current_price <= trigger
 
         else:
-            trigger = float(candle["high"]) + offset
+            # 기준봉 high와 직전봉 / 직2전봉 close 중 최댓값
+            reference_price = max(
+                float(candle["high"]),
+                prev_close,
+                prev2_close,
+            )
+
+            trigger = reference_price + offset
             price_condition = current_price >= trigger
 
         # 첫 유효 기준봉을 선택한 뒤에는
@@ -7166,7 +7183,7 @@ def analyze_sol_link_special3(
             candle_name=candle_name,
             current_price=current_price,
             tail_info=info,
-            entry_reference=trigger,
+            entry_reference=reference_price,
             entry_trigger=trigger,
             price_condition=True,
         )
@@ -7176,6 +7193,9 @@ def analyze_sol_link_special3(
             "special3_bb_condition": bool(bb_condition),
             "special3_offset": float(offset),
             "special3_offset_pct": 0.0065,
+            "special3_reference_price": float(reference_price),
+            "special3_prev_close": prev_close,
+            "special3_prev2_close": prev2_close,
         })
 
         return result
