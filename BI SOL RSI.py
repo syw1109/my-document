@@ -7454,6 +7454,99 @@ def analyze_sol_link_tail_signal(
         }
 
     # =============================================
+    # 최근 4개 확정봉 과변동성 차단 필터
+    # (최고 종가 - 최저 종가) / 직전 확정봉 종가
+    # 5% 미만만 허용. 정확히 5% 또는 그 이상이면 모든 전략 진입 차단.
+    # =============================================
+    last_4_confirmed = df.iloc[-5:-1] # 검사 대상: -5, -4, -3, -2
+
+    range_reference_close = float(
+        last_4_confirmed.iloc[-1]["close"]
+    )
+
+    # 분모로 사용할 종가가 잘못되면 진입 금지
+    if not (
+        0 < range_reference_close < float("inf")
+    ):
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": "최근 4봉 변동폭 계산용 종가 오류",
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            **volatility_debug,
+        }
+
+    if side == "long":
+        # 롱: 꼬리 제외, 종가끼리 비교
+        range_high = float(
+            last_4_confirmed["close"].max()
+        )
+        range_low = float(
+            last_4_confirmed["close"].min()
+        )
+        range_basis = "close"
+
+    else:
+        # 숏: 꼬리 포함, 실제 고가와 저가 비교
+        range_high = float(
+            last_4_confirmed["high"].max()
+        )
+        range_low = float(
+            last_4_confirmed["low"].min()
+        )
+        range_basis = "high_low"
+
+    last_4_range_pct = (
+        (range_high - range_low)
+        / range_reference_close
+    )
+
+    # 5% 미만이어야 통과.
+    # 음수 또는 NaN 등 비정상 계산값도 통과시키지 않음.
+    cond_last_4_range = (
+        0 <= last_4_range_pct < 0.05
+    )
+
+    # 기존 디버그 딕셔너리에 추가하면
+    # 이후 모든 전략의 반환 결과에도 함께 기록됩니다.
+    volatility_debug.update({
+        "last_4_range_basis": range_basis,
+        "last_4_range_high": range_high,
+        "last_4_range_low": range_low,
+        "last_4_range_reference_close": (
+            range_reference_close
+        ),
+        "last_4_range_pct": float(last_4_range_pct),
+        "last_4_range_limit": 0.05,
+        "last_4_range_condition": bool(
+            cond_last_4_range
+        ),
+    })
+
+    if not cond_last_4_range:
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": (
+                f"최근 4개 확정봉 변동폭 "
+                f"{last_4_range_pct * 100:.3f}% | "
+                "5% 미만 조건 미충족으로 진입 금지"
+            ),
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            **volatility_debug,
+        }
+
+    # =============================================
     # 스페셜3
     # =============================================
     result = analyze_sol_link_special3(
