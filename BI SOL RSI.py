@@ -2896,6 +2896,7 @@ def analyze_bullish_divergence_close(
         cond_price_15
         and cond_rsi_15
         and cond_volatility_15
+        and cond_range_volatility_7        
         and cond_bearish_candle
         and cond_bollinger_filter
         and cond_range_volatility_7
@@ -7121,50 +7122,37 @@ def analyze_sol_link_special3(
 
         # -----------------------------------------
         # 기준봉 공통 조건
-        # 1. 몸통 변동성 >= 0.5%
-        # 2. 방향별 꼬리 / 몸통 >= 1/3
+        # 1. 몸통 변동성 >= 0.3%
+        # 2. 방향별 꼬리 / 몸통 >= 1/4
         # 3. 방향별 BB 이탈
         # -----------------------------------------
         base_condition = (
-            info["body_volatility"] >= 0.005
-            and info["tail_ratio"] >= 1 / 3
+            info["body_volatility"] >= 0.003
+            and info["tail_ratio"] >= 1 / 4
             and bb_condition
         )
 
         if not base_condition:
             continue
 
-        # -----------------------------------------
-        # 몸통 변동성 0.7% 이상이면
-        # 기준봉 종가의 0.7%를 가격 간격으로 사용
-        # -----------------------------------------
-        capped = info["body_volatility"] >= 0.007
 
-        offset = (
-            float(candle["close"]) * 0.007
-            if capped
-            else info["body"]
-        )
-
+        # -----------------------------------------
+        # 고정 가격 간격 몸통 변동성 크기와 무관하게 기준봉 종가의 0.65%를 사용합니다.
+        # -----------------------------------------
+        offset = float(candle["close"]) * 0.0065
+        
         # -----------------------------------------
         # 현재가 진입 조건
+        # 롱: low - offset 도달 또는 하회
+        # 숏: high + offset 도달 또는 상회
         # -----------------------------------------
         if side == "long":
             trigger = float(candle["low"]) - offset
+            price_condition = current_price <= trigger
 
-            price_condition = (
-                current_price <= trigger
-                if capped
-                else current_price < trigger
-            )
         else:
             trigger = float(candle["high"]) + offset
-
-            price_condition = (
-                current_price >= trigger
-                if capped
-                else current_price > trigger
-            )
+            price_condition = current_price >= trigger
 
         # 첫 유효 기준봉을 선택한 뒤에는
         # 현재가 미도달이어도 직2전봉으로 변경하지 않음.
@@ -7187,7 +7175,7 @@ def analyze_sol_link_special3(
             "base_bb_condition": bool(bb_condition),
             "special3_bb_condition": bool(bb_condition),
             "special3_offset": float(offset),
-            "special3_offset_capped": bool(capped),
+            "special3_offset_pct": 0.0065,
         })
 
         return result
@@ -7386,7 +7374,17 @@ def analyze_sol_link_tail_signal(
     current_price = float(current_candle["close"])
 
     # =============================================
-    # 최근 6개 확정봉 공통 변동성 필터
+    # 최근 6개 확정봉 공통 변동성 필터 0.5%이상 캔들 필요
+    # 최근 6개 확정봉 검사
+    # │
+    # ├─ 몸통 변동성 0.5% 이상 봉이 없음
+    # │      → signal=False 반환 → 모든 진입 차단
+    # │
+    # └─ 최소 1개 있음
+    #        → 스페셜3
+    #        → 스페셜4
+    #        → 스페셜2
+    #        → 일반 / 스페셜1 순서로 조건 확인
     # =============================================
     # 기존 변수명 유지, 실제 검사 개수는 6개.
     last_5_confirmed = df.iloc[-7:-1]
