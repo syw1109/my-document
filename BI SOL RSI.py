@@ -7739,8 +7739,16 @@ def analyze_sol_link_tail_signal(
         / directional_opens
     )
 
+    bullish_02_count = int(
+        (directional_returns >= 0.002).sum()
+    )
+
     bullish_03_count = int(
         (directional_returns >= 0.003).sum()
+    )
+
+    bullish_06_count = int(
+        (directional_returns >= 0.006).sum()
     )
 
     bullish_07_count = int(
@@ -7753,18 +7761,35 @@ def analyze_sol_link_tail_signal(
 
     if side == "short":
         cond_directional_entry = (
+            # 기존 조건 1
             bullish_03_count >= 3
+
+            # 기존 조건 2
             or bullish_07_count >= 2
+
+            # 추가 조건:
+            # +0.6% 이상 양봉 1개 이상
+            # AND +0.2% 이상 양봉 3개 이상
+            or (
+                bullish_06_count >= 1
+                and bullish_02_count >= 3
+            )
         )
 
         directional_reason = (
             "최근 4봉 숏 진입 제한 미충족 | "
+            f"+0.2% 이상 양봉={bullish_02_count}개 | "
             f"+0.3% 이상 양봉={bullish_03_count}개 | "
+            f"+0.6% 이상 양봉={bullish_06_count}개 | "
             f"+0.7% 이상 양봉={bullish_07_count}개 | "
-            "필요: 각각 3개 이상 또는 2개 이상"
+            "필요: "
+            "(+0.3% 이상 3개) OR "
+            "(+0.7% 이상 2개) OR "
+            "(+0.6% 이상 1개 AND +0.2% 이상 3개)"
         )
 
     else:
+        # 롱은 현재 코드 그대로 유지
         cond_directional_entry = (
             bearish_03_count >= 1
         )
@@ -7772,7 +7797,7 @@ def analyze_sol_link_tail_signal(
         directional_reason = (
             "최근 4봉 롱 진입 제한 미충족 | "
             f"-0.3% 이하 음봉={bearish_03_count}개 | "
-            "필요: 2개 이상"
+            "필요: 1개 이상"
         )
 
     volatility_debug.update({
@@ -7780,7 +7805,9 @@ def analyze_sol_link_tail_signal(
             float(value)
             for value in directional_returns.tolist()
         ],
+        "last_4_bullish_02_count": bullish_02_count,
         "last_4_bullish_03_count": bullish_03_count,
+        "last_4_bullish_06_count": bullish_06_count,
         "last_4_bullish_07_count": bullish_07_count,
         "last_4_bearish_03_count": bearish_03_count,
         "last_4_directional_entry_condition": bool(
