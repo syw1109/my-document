@@ -853,22 +853,16 @@ def manage_eth_based_sol_exit(
     """
 
     # =================================================
-    # ETH 및 SOL 포지션 조회
+    # ETH 및 SOL 포지션 조회 & ETH 포지션이 없으면 전략 비활성
     # =================================================
-    eth_position = get_position_amount(
-        eth_symbol
-    )
+    # ETH 포지션부터 확인
+    eth_position = get_position_amount(eth_symbol)
 
-    sol_position = get_position_amount(
-        sol_symbol
-    )
-
-    # -------------------------------------------------
-    # ETH 포지션이 없으면 전략 비활성
-    # -------------------------------------------------
     if eth_position == 0:
         return
 
+    # ETH가 있을 때만 SOL 포지션 확인
+    sol_position = get_position_amount(sol_symbol)
     # -------------------------------------------------
     # ETH가 있는데 SOL이 없으면 ETH 청산
     # -------------------------------------------------
@@ -7090,6 +7084,10 @@ def analyze_sol_link_special3(
     side,
     current_price
 ):
+    # 현재 진행봉 1개 + 확정봉 3개 필요
+    if df is None or len(df) < 4:
+        return None
+
     tail_function = (
         get_long_lower_tail_info
         if side == "long"
@@ -7098,17 +7096,20 @@ def analyze_sol_link_special3(
 
     prev_candle = df.iloc[-2]
     prev2_candle = df.iloc[-3]
+    prev3_candle = df.iloc[-4]
 
-    # 진입 기준가격 비교에 사용할 두 확정봉의 종가
+    # 진입 기준가격 비교에 사용할 최근 3개 확정봉 종가
     prev_close = float(prev_candle["close"])
     prev2_close = float(prev2_candle["close"])
+    prev3_close = float(prev3_candle["close"])
 
-    # 직전봉 우선.
-    # 직전봉의 몸통 / 꼬리 / BB 조건 중 하나라도
-    # 실패하면 직2전봉을 확인합니다.
+    # 직전봉 → 직2전봉 → 직3전봉 순서.
+    # 몸통 / 꼬리 / BB 조건 중 하나라도 실패하면
+    # 다음 기준봉 후보를 확인합니다.
     for candle_name, candle in [
         ("prev", prev_candle),
         ("prev2", prev2_candle),
+        ("prev3", prev3_candle),
     ]:
         info = tail_function(candle)
 
@@ -7127,7 +7128,7 @@ def analyze_sol_link_special3(
             )
 
         # -----------------------------------------
-        # 기준봉 공통 조건
+        # 기준봉 공통 조건 — 기존 값 유지
         # 1. 몸통 변동성 >= 0.3%
         # 2. 방향별 꼬리 / 몸통 >= 1/4
         # 3. 방향별 BB 이탈
@@ -7150,29 +7151,31 @@ def analyze_sol_link_special3(
         # 진입 기준가격 및 현재가 조건
         # -----------------------------------------
         if side == "long":
-            # 기준봉 low와 직전봉 / 직2전봉 close 중 최솟값
+            # 기준봉 low와 최근 3개 확정봉 close 중 최솟값
             reference_price = min(
                 float(candle["low"]),
                 prev_close,
                 prev2_close,
+                prev3_close,
             )
 
             trigger = reference_price - offset
             price_condition = current_price <= trigger
 
         else:
-            # 기준봉 high와 직전봉 / 직2전봉 close 중 최댓값
+            # 기준봉 high와 최근 3개 확정봉 close 중 최댓값
             reference_price = max(
                 float(candle["high"]),
                 prev_close,
                 prev2_close,
+                prev3_close,
             )
 
             trigger = reference_price + offset
             price_condition = current_price >= trigger
 
         # 첫 유효 기준봉을 선택한 뒤에는
-        # 현재가 미도달이어도 직2전봉으로 변경하지 않음.
+        # 현재가 미도달이어도 다음 기준봉으로 변경하지 않음.
         if trigger <= 0 or not price_condition:
             return None
 
@@ -7196,6 +7199,7 @@ def analyze_sol_link_special3(
             "special3_reference_price": float(reference_price),
             "special3_prev_close": prev_close,
             "special3_prev2_close": prev2_close,
+            "special3_prev3_close": prev3_close,
         })
 
         return result
@@ -7394,17 +7398,17 @@ def analyze_sol_link_tail_signal(
     current_price = float(current_candle["close"])
 
     # =============================================
-    # 최근 6개 확정봉 공통 변동성 필터 0.5%이상 캔들 필요
-    # 최근 6개 확정봉 검사
-    # │
-    # ├─ 몸통 변동성 0.5% 이상 봉이 없음
-    # │      → signal=False 반환 → 모든 진입 차단
-    # │
-    # └─ 최소 1개 있음
-    #        → 스페셜3
-    #        → 스페셜4
-    #        → 스페셜2
-    #        → 일반 / 스페셜1 순서로 조건 확인
+    # 기존 실행 함수의 쿨다운·잔고·LINK·수량 조건
+    #     ↓
+    # 최근 6개 확정봉 중 몸통 변동성 0.5% 이상 봉이 있는가?
+    #     ├─ 없음 → 모든 전략 진입 차단
+    #     └─ 있음
+    #          ↓
+    # 최근 4개 확정봉의 방향별 변동폭이 5% 미만인가?
+    #     ├─ 아니오 → 모든 전략 진입 차단
+    #     └─ 예
+    #          ↓
+    # 스페셜3 → 스페셜4 → 스페셜2 → 일반 / 스페셜1
     # =============================================
     # 기존 변수명 유지, 실제 검사 개수는 6개.
     last_5_confirmed = df.iloc[-7:-1]
@@ -7547,6 +7551,113 @@ def analyze_sol_link_tail_signal(
         }
 
     # =============================================
+    # 최근 4개 확정봉 방향별 공통 진입 제한
+    # 검사 대상: -5, -4, -3, -2  현재 진행봉(-1)은 제외합니다.
+    # 숏: +0.3% 이상 양봉 3개 이상 또는 +0.7% 이상 양봉 2개 이상
+    # 롱: -0.3% 이하 음봉 2개 이상
+    # =============================================
+    directional_candles = df.iloc[-5:-1]
+
+    directional_opens = (
+        directional_candles["open"].astype(float)
+    )
+    directional_closes = (
+        directional_candles["close"].astype(float)
+    )
+
+    # 유효하지 않은 가격이면 진입 금지
+    valid_prices = (
+        directional_opens.gt(0)
+        & directional_opens.lt(float("inf"))
+        & directional_closes.gt(0)
+        & directional_closes.lt(float("inf"))
+    )
+
+    if not bool(valid_prices.all()):
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": "최근 4봉 방향별 조건 계산용 가격 오류",
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            **volatility_debug,
+        }
+
+    # 양수는 양봉, 음수는 음봉
+    directional_returns = (
+        (directional_closes - directional_opens)
+        / directional_opens
+    )
+
+    bullish_03_count = int(
+        (directional_returns >= 0.003).sum()
+    )
+
+    bullish_07_count = int(
+        (directional_returns >= 0.007).sum()
+    )
+
+    bearish_03_count = int(
+        (directional_returns <= -0.003).sum()
+    )
+
+    if side == "short":
+        cond_directional_entry = (
+            bullish_03_count >= 3
+            or bullish_07_count >= 2
+        )
+
+        directional_reason = (
+            "최근 4봉 숏 진입 제한 미충족 | "
+            f"+0.3% 이상 양봉={bullish_03_count}개 | "
+            f"+0.7% 이상 양봉={bullish_07_count}개 | "
+            "필요: 각각 3개 이상 또는 2개 이상"
+        )
+
+    else:
+        cond_directional_entry = (
+            bearish_03_count >= 2
+        )
+
+        directional_reason = (
+            "최근 4봉 롱 진입 제한 미충족 | "
+            f"-0.3% 이하 음봉={bearish_03_count}개 | "
+            "필요: 2개 이상"
+        )
+
+    volatility_debug.update({
+        "last_4_directional_returns": [
+            float(value)
+            for value in directional_returns.tolist()
+        ],
+        "last_4_bullish_03_count": bullish_03_count,
+        "last_4_bullish_07_count": bullish_07_count,
+        "last_4_bearish_03_count": bearish_03_count,
+        "last_4_directional_entry_condition": bool(
+            cond_directional_entry
+        ),
+    })
+
+    # 공통 제한 미충족 시 아래 전략을 검사하지 않음
+    if not cond_directional_entry:
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": directional_reason,
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            **volatility_debug,
+        }
+
+    # =============================================
     # 스페셜3
     # =============================================
     result = analyze_sol_link_special3(
@@ -7559,18 +7670,18 @@ def analyze_sol_link_tail_signal(
         result.update(volatility_debug)
         return result
 
-    # =============================================
-    # 스페셜4
-    # =============================================
-    result = analyze_sol_link_special4(
-        df=df,
-        side=side,
-        current_price=current_price
-    )
+    # # =============================================
+    # # 스페셜4  해당전략은 케이스도 낮은데다가 너무 딜레이 시킴
+    # # =============================================
+    # result = analyze_sol_link_special4(
+    #     df=df,
+    #     side=side,
+    #     current_price=current_price
+    # )
 
-    if result is not None:
-        result.update(volatility_debug)
-        return result
+    # if result is not None:
+    #     result.update(volatility_debug)
+    #     return result
 
     # =============================================
     # 기존 스페셜2
@@ -7787,7 +7898,7 @@ def trade_link_tail_strategy(
             return
 
     elif side == "short":
-        if now - last_link_tail_short_trade_time < 2700:
+        if now - last_link_tail_short_trade_time < 1800:
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
                 "2700초 공통 쿨다운 중 진입 금지"
@@ -7796,7 +7907,7 @@ def trade_link_tail_strategy(
 
         if (
             timeframe == "15m"
-            and now - last_link_tail_short_15m < 2700
+            and now - last_link_tail_short_15m < 1800
         ):
             print(
                 f"[{symbol} LINK_TAIL_SHORT 15m] "
@@ -7941,19 +8052,30 @@ def trade_link_tail_strategy(
 
     # =============================================
     # TP 가격 계산
+    #
+    # 숏: 모든 전략 -0.5%로 통일
+    # 롱: 기존 전략별 TP 유지
     # =============================================
     signal_type = tail_signal.get("signal_type")
 
-    # 신규 스페셜4
-    # 롱: 기준봉 high / 숏: 기준봉 low
-    if signal_type == "special4":
+    # -----------------------------------------
+    # 숏 전체 공통 TP
+    # 일반 / 스페셜1 / 스페셜2 / 스페셜3 / 스페셜4
+    # -----------------------------------------
+    if side == "short":
+        tp_price = current_price * 0.9955
+
+    # -----------------------------------------
+    # 아래부터 롱 전용 TP
+    # -----------------------------------------
+
+    # 스페셜4 롱: 기준봉 high
+    elif signal_type == "special4":
         tp_price = float(
             tail_signal["special_tp_price"]
         )
 
-        # 분석에 쓰인 현재봉 close와 ticker 가격이
-        # 다를 수 있으므로 주문 기준 가격으로 재확인.
-        if side == "long" and tp_price <= current_price:
+        if tp_price <= current_price:
             print(
                 f"[{symbol} LINK_TAIL_LONG] "
                 "스페셜4 기준봉 high가 현재가 이하: "
@@ -7961,41 +8083,23 @@ def trade_link_tail_strategy(
             )
             return
 
-        if side == "short" and tp_price >= current_price:
-            print(
-                f"[{symbol} LINK_TAIL_SHORT] "
-                "스페셜4 기준봉 low가 현재가 이상: "
-                "진입 금지"
-            )
-            return
-
-    # 기존 스페셜2
+    # 스페셜2 롱: +1%
     elif signal_type == "special2":
-        tp_price = (
-            current_price * 1.01
-            if side == "long"
-            else current_price * 0.99
-        )
+        tp_price = current_price * 1.01
 
-    # 기존 스페셜1
+    # 스페셜1 롱: 기준봉 시가
     elif tail_signal["special_case"]:
         tp_price = float(
             tail_signal["special_tp_price"]
         )
 
-        if side == "long" and tp_price <= current_price:
+        # 기존 보정 유지
+        if tp_price <= current_price:
             tp_price = current_price * (1 + tp_pct)
 
-        elif side == "short" and tp_price >= current_price:
-            tp_price = current_price * (1 - tp_pct)
-
-    # 기존 일반 + 신규 스페셜3
+    # 일반 / 스페셜3 롱: 기존 기본 TP
     else:
-        tp_price = (
-            current_price * (1 + tp_pct)
-            if side == "long"
-            else current_price * (1 - tp_pct)
-        )
+        tp_price = current_price * (1 + tp_pct)
 
     # =============================================
     # 기존 SOL 롱 주문 / 쿨다운 갱신 / TP
