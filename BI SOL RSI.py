@@ -7062,7 +7062,7 @@ def _link_tail_signal_result(
         "special_case_2": signal_type == "special2",
         "special_case_3": signal_type == "special3",
         "special_case_4": signal_type == "special4",
-
+        "special_case_5": signal_type == "special5",
         "entry_reference_price": float(entry_reference),
         "entry_trigger_price": float(entry_trigger),
         "current_price_condition": bool(price_condition),
@@ -7353,7 +7353,153 @@ def analyze_sol_link_special4(
 
     return None
 
+# =================================================
+# 스페셜5
+# 최근 4개 확정봉:
+# 1. 방향별 0.8% 이상 봉 1개 이상
+# 2. 방향별 0.4% 이상 봉 2개 이상
+# 3. 방향별 BB 이탈 봉 2개 이상
+# =================================================
 
+def analyze_sol_link_special5(
+    df,
+    side,
+    current_price
+):
+    if side not in ("long", "short"):
+        raise ValueError(
+            "side는 'long' 또는 'short'이어야 합니다."
+        )
+
+    # 현재 진행봉 1개 + 확정봉 4개 필요
+    if df is None or len(df) < 5:
+        return None
+
+    # 현재 진행봉 제외: -5, -4, -3, -2
+    last_4_confirmed = df.iloc[-5:-1]
+
+    opens = last_4_confirmed["open"].astype(float)
+    closes = last_4_confirmed["close"].astype(float)
+
+    # 방향별 BB 검사에 사용할 가격과 밴드
+    if side == "long":
+        bb_test_prices = (
+            last_4_confirmed["low"].astype(float)
+        )
+        bb_values = (
+            last_4_confirmed["bb_lower"].astype(float)
+        )
+    else:
+        bb_test_prices = (
+            last_4_confirmed["high"].astype(float)
+        )
+        bb_values = (
+            last_4_confirmed["bb_upper"].astype(float)
+        )
+
+    # 가격 / BB 데이터 유효성 확인
+    valid_data = (
+        opens.gt(0)
+        & opens.lt(float("inf"))
+        & closes.gt(0)
+        & closes.lt(float("inf"))
+        & bb_test_prices.gt(0)
+        & bb_test_prices.lt(float("inf"))
+        & bb_values.gt(0)
+        & bb_values.lt(float("inf"))
+    )
+
+    if not bool(valid_data.all()):
+        return None
+
+    # 양수: 양봉 / 음수: 음봉
+    body_returns = (closes - opens) / opens
+
+    if side == "long":
+        count_08 = int(
+            (body_returns <= -0.008).sum()
+        )
+        count_04 = int(
+            (body_returns <= -0.004).sum()
+        )
+
+        # 각 봉의 저가와 해당 봉 당시 BB 하단 비교
+        bb_break_mask = bb_test_prices < bb_values
+
+        tail_function = get_long_lower_tail_info
+
+    else:
+        count_08 = int(
+            (body_returns >= 0.01).sum()
+        )
+        count_04 = int(
+            (body_returns >= 0.004).sum()
+        )
+
+        # 각 봉의 고가와 해당 봉 당시 BB 상단 비교
+        bb_break_mask = bb_test_prices > bb_values
+
+        tail_function = get_short_upper_tail_info
+
+    bb_break_count = int(bb_break_mask.sum())
+
+    # 세 가지 조건을 모두 만족해야 진입
+    special5_condition = (
+        count_08 >= 1
+        and count_04 >= 3
+        and bb_break_count >= 2
+    )
+
+    if not special5_condition:
+        return None
+
+    # 결과 기록용 기준봉: 가장 최근 확정봉
+    last_confirmed = last_4_confirmed.iloc[-1]
+    info = tail_function(last_confirmed)
+
+    result = _link_tail_signal_result(
+        side=side,
+        signal_type="special5",
+        candle=last_confirmed,
+        candle_name="prev",
+        current_price=current_price,
+        tail_info=info,
+        entry_reference=float(last_confirmed["close"]),
+        entry_trigger=current_price,
+        price_condition=True,
+    )
+
+    result.update({
+        "special_case_5": True,
+        "reason": (
+            f"{side} 스페셜5 즉시 시장가 진입 조건 충족 | "
+            f"방향별 0.8% 이상={count_08}개 | "
+            f"방향별 0.4% 이상={count_04}개 | "
+            f"BB 이탈={bb_break_count}개"
+        ),
+        "special5_count_08": count_08,
+        "special5_count_04": count_04,
+        "special5_bb_break_count": bb_break_count,
+        "special5_bb_break_condition": bool(
+            bb_break_count >= 2
+        ),
+        "special5_bb_break_mask": [
+            bool(value)
+            for value in bb_break_mask.tolist()
+        ],
+        "special5_body_returns": [
+            float(value)
+            for value in body_returns.tolist()
+        ],
+        "special5_last_confirmed_ts": int(
+            last_confirmed["ts"]
+        ),
+        "special5_last_confirmed_close": float(
+            last_confirmed["close"]
+        ),
+    })
+
+    return result
 # =================================================
 # 5. 통합 조건 분석
 # =================================================
@@ -7620,7 +7766,7 @@ def analyze_sol_link_tail_signal(
 
     else:
         cond_directional_entry = (
-            bearish_03_count >= 2
+            bearish_03_count >= 1
         )
 
         directional_reason = (
@@ -7760,6 +7906,20 @@ def analyze_sol_link_tail_signal(
         })
 
         return result
+
+    # =============================================
+    # 스페셜5
+    # 기존 공통필터를 모두 통과한 경우에만 검사. 보류, 하락장에선 안좋은 타점 많을것 같음
+    # =============================================
+    # result = analyze_sol_link_special5(
+    #     df=df,
+    #     side=side,
+    #     current_price=current_price
+    # )
+
+    # if result is not None:
+    #     result.update(volatility_debug)
+    #     return result
 
     # =============================================
     # 기존 일반 / 스페셜1
