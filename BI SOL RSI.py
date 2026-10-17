@@ -1,100 +1,5 @@
 # 적용 내용
-# 바이낸스 SOL/USDT 선물.
-# 격리(Isolated) 마진.
-# 레버리지 5배.
-# 선물계좌 증거금의 50% 사용.
-# 기존 SOL 포지션이 있으면 거래 안 함.
-
-# 추세 전략 : MA18 4일 변화 추세 분석 (3일 연속 0.6% 이상 상승/하락 여부) 
-# ㄴ 업비트 SOL 18일 MA가 3일 연속 0.6%이상 상승이면 숏 금지.
-# ㄴ 업비트 SOL 18일 MA가 3일 연속 0.6%이상 하락이면 롱 금지.
-# 지난 6일동안 같은 방향이고 변동성 0.4%이상이 5일이상 존재 상승/하락 추세로 보고 각각 숏/롱 진입 금지
-# 현재가와 토요일 기준가 차이가 ±9% 이상이면 거래 금지. -> 위에 추세 전략에 해당이 되어서 빼도 되겠다.
-# 업비트 기준 솔라나 시가가 어제는 43,18 위였는데, 오늘은 43,18 중 하나라도 아래면 롱 깨진 조건이니 롱 진입 금지
-# 업비트 기준 솔라나 시가가 어제는 43,18 모두 위가 아니었는데, 오늘은 43,18 모두 위면 롱 진입 조건으로 숏 진입 금지
-# 일,월,화,수 매일 1% TP룰
-# while문으로 매일 9시에 거래 # 목요일/금요일/토요일 매매 금지.
-# SOL 포지션이 있으면 금요일 종가에 close 하기, 가능하면 토요일 1시간봉 05:00봉 마감 06:00 에 close --- 보류
-
-# 기존 상승다이버 rsi 전략
-# 기존 SOL 포지션이 없어야 함.
-# 직전 16개 1시간봉 중 마지막 봉을 판단봉으로 사용.
-# 이전 15개 봉의 lowest low보다 직전봉 close가 더 낮아야 함.
-# 이전 15개 봉의 lowest rsi보다 직전봉 rsi가 2% 이상 높아야 함.
-# 직전봉의 open 대비 close 변동폭이 0.3% 이상이어야 함.
-# 진입 후 직전 캔들 종가값 대비 롱인 경우는+1% 값에,  T.P (take profit)걸기
-# 진입 비중은 계좌 달러의 0.5배로 시장가로 들어가고 진입 레버리지는 5배.
-
-
-# 1. 하락 다이버전스일때 숏 진입하는 조건을 추가해주세요.
-# 직전 16개 1시간봉 중 마지막 봉을 판단봉으로 사용.
-# 이전 15개 봉의 highest high보다 직전봉 close가 더 높아야 함.
-# 이전 15개 봉의 highest rsi보다 직전봉 rsi가 2% 이상 낮아야 함.
-# 직전봉의 open 대비 close 변동폭이 0.3% 이상이어야 함.
-# 진입 후 직전 캔들 종가값 대비 롱인 경우는+1% 값에, 숏인 경우는 -1% 값에 T.P (take profit)걸기
-# 진입 비중은 계좌 달러의 0.5배로 시장가로 들어가고 진입 레버리지는 5배
-
-# 2. 1hr봉 전략과 동일하게 15m봉 전략도 똑같이 만들어주세요.
-# 즉 1hr봉도 보고 15m분 봉으로도 모니터링 하다가 1hr 봉 기준에 만족 안되면 15m 봉을 보는 식으로 해주시면 되겠습니다. 
-# 직전 16개봉 15분봉 중 마지막봉을 판단봉 사용.
-# 하락 다이버전스일때는 숏, 상승 다이버전스 일때는 롱으로 진입 합니다
-# 진입 후 직전 캔들 종가값 대비 롱인 경우는+0.9% 값에, 숏인 경우는 -0.9% 값에 T.P (take profit)걸기
-# 진입 비중은 계좌 달러의 0.5배로 시장가로 들어가고 진입 레버리지는 5배
-
-# 3. btc 비트코인도 rsi 룰을 추가해주세요.
-# 1hr봉 기준, 15분봉 기준
-# 상승 다이버전스, 하락 다이버전스
-# btc는변동성이 작으니 1시간봉, 15분봉 모두 T.P값을 0.5% 값으로 해주세요. 
-# 30분봉도 추가
-# cme값과 1%이상 차이 날때만 포지션 진입.
-# 다이버 전략에도 3일,6일 추세 값과, 이평선 깨지거나 돌파시에 롱 숏 진입 금지룰 동일하게 적용하고 싶음
-# lowest close 기준 전략도 추가
-
-# 26/6/4
-# 0. 다이버 전략에도 업비트 솔라나 ma18,43룰 진입기준 바뀌는때에 롱숏 금지룰 추가 - o
-# 1. 09:00 룰 Cme 1% 룰 추가필요 - o
-# 2.lowest close, highest close 기준 롱숏 룰 추가, 0.3% 올랐 을때만 진입 룰 -o
-# 3.btc빼기-물타기를 두배로해서 자원고갈 - 위험  - o
-# 4.xrp 추가 롱 매수룰(하락추세룰, ma18,43 진입룰 파괴 & 추매 가능 40*xrp) - ㅇ
-# 5.ada 추가 숏 매수룰(하락추세룰, ma18,43 진입룰 파괴 & 추매 가능 7*ada) - ㅇ
-# 6) 선물계좌 잔고 6000~12000달러 사이일때만 매수
-# - 잔고부족으로 계속 매수되는 현상 방지
-# -  실수로 잔고 너무 많아서 사지는것 방지
-
-# 25/6/5 15분봉 - 15분, 60분봉-60분 쿨다운룰 추가
-# 15분봉 룰은 15분이내 매매 기록을 보고, 1시간봉 룰은 1시간 이내의 매매 기록을 보고 중복 진입하는것을 방지한다.(이번 봉에서 익절 나버리면 또 진입되기 때문) 
-# 롱숏 동일
-
-
-# 26/6/10
-# 도지룰 RSI, CLOSE 값 기준 완화. 더 잦은 매매목적
-# LINK 룰 현재봉 기준 0.9% 이상 변동성+직전 lowest/highest close값 대비 0.3% 이상 변동성, 직전봉 RSI가 2% 이상 변동성 가질때 진입. 단타 목적, 직전15봉의 변동성 2.3%이상
-
-#6/15
-# xrp,ada close 룰, 하락장에서 롱진입전략은 직전 15봉 1.5% 변동성 있을때만 진입 
-# high, low룰 , 15봉 변동성 1% 변동성 있을때만 진입 
-# 전체 전략 15봉 변동 %에 따라 익절률 다르게 2% 미만시 익절 % 1.4%, 2% 변동성있을시 2% 익절률
-# xrp, ada전략 추매 타이밍 증가 15분봉 -> 30분 이내 거래 미존재, 1시간봉은 2시간 이내 거래 미존재
-
-#6/20 리스크 헷지
-# 7% 손절 SL 주문 추가. 기존 수량있을시 tp 안거는데, 2차주문시 2차진입 기준의 tp 로  주문 수정. sl 은 최초 그대로 유지
-# 5배 -> 10배 수정, 몇시간 만에 10% 이상 하락하는 경우가 1년에 2~3번 있어서, 5배로 하면 4000불 손실이라서 10배로 수정. 7% 손절 걸면 상관없는거 아닌가? 그래서 다시 5배 유지 
-# cme룰 목요일도 추가
-
-# 7/11 5분봉 롱 숏 링크 전략 추가 - ㅇ
-# 7/11 50ma, 100vwma, 200ma 이평선 RSI+전략 추가 - eth로 추가 매수 조절. 평소엔 그냥 사짐. doge/10 가격도 
-# 7/11 레버리지 10배로 수정. 진입 씨드 조절 필요
-# 0.7% 손절룰 추가. 벌때는 1.4% 벌고 잃을때는 0.7%만 잃기. 승률 55%~60% 
-
-# + 추가하려는 전략
-
-
-
-
-# 5캔들안에 다이버 있었는지 확인하고 1% 하락된 가격으로 진입하는 조건? 최초 다이버 이후 바로 진입될까봐 걱정, → 요건 ticker xrp 말고 다른거로 하면 되겠다.
-# 추매 후 추매 물량은 tp기준으로 털고 싶은데, 그렇게 하자니 폭락시에 다 뚜드려 맞을까봐 무섭네. 차라리 7% SL이면 추가 손실은 없을거자나.
-# 7% 하락하는 경우가 많이 없으니, 손절 나가면 그럴땐 그냥 2600달러 뚜두려 맞고 끝내고, 다음 abc 노리면 되지 않을까.
-
+# before 리모델링 전후로 완전히 다 바꿈 . 기존 짜투리 전략들 모두 삭제
 import time
 import datetime
 import ccxt
@@ -1271,116 +1176,6 @@ def ma18_6day_volatility_trend():
         "last_ma18": last7[-1]
     }
 
-# cme룰 손절폭이 너무 커서 그냥 손매로 그날 가격 괜찮을떄 들어가거나 다이버에서 들어가는게 더 이득이겠다
-# def trade_once_sol():
-#     """매일 09:00에 실행하는 기존 SOL 전략"""
-#     set_margin_and_leverage(SOL_SYMBOL)
-
-#     now = now_kst()
-#     if now.weekday() in [4, 5]: # 3: 목, 4: 금, 5:토, 목요일, 금요일은 거래 막자. 마지막날이라서 변동성 확대 우려
-#         print("금요일/토요일은 매매 금지")
-#         return
-
-#     if has_position(MARKET_ID_SOL):
-#         print("기존 SOL 포지션이 있어서 거래하지 않음")
-#         return
-
-#     sat_close     = get_last_saturday_6_close()
-#     current_price = float(exchange.fetch_ticker(SOL_SYMBOL)['last'])
-
-
-#     # ✅ CME 편차 1% 조건 추가
-#     deviation = abs(current_price - sat_close) / sat_close
-#     if deviation < 0.01:
-#         print(f"[09:00 SOL] CME 편차 {deviation*100:.2f}% 미만으로 진입 금지 "
-#               f"| CME={sat_close:.2f}, current={current_price:.2f}")
-#         return
-
-
-#     print(f"[09:00 SOL] CME 편차 {deviation*100:.2f}% 충족 "
-#           f"| CME={sat_close:.2f}, current={current_price:.2f}")
-
-
-#     trend = ma18_4day_change_trend()
-#     if trend is None:
-#         print("MA18 추세 데이터를 가져오지 못했습니다.")
-#         return
-
-#     vol_trend = ma18_6day_volatility_trend()
-#     if vol_trend is None:
-#         print("MA18 6일 변동성 추세 데이터를 가져오지 못했습니다.")
-#         return
-
-#     upbit_ma18, upbit_ma43         = get_upbit_ma18_ma43()
-#     yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
-#     upbit_today_open               = get_upbit_today_open()
-#     upbit_yesterday_open           = get_upbit_yesterday_open()
-
-#     yesterday_above_both    = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
-#     today_below_either      = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
-#     yesterday_not_above_both = upbit_yesterday_open <= yesterday_ma18 or upbit_yesterday_open <= yesterday_ma43
-#     today_above_both        = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
-
-#     available_usdt = get_available_usdt()
-#     margin_to_use  = available_usdt*0.35
-#     notional       = margin_to_use * LEVERAGE
-#     amount         = round(notional / current_price, 3)
-
-#     if amount <= 0:
-#         print("주문 수량이 0이라서 중단")
-#         return
-
-#     tp_price_long  = current_price * 1.015
-#     tp_price_short = current_price * 0.985
-    
-#     sl_price_long  = current_price * 0.95
-#     sl_price_short = current_price * 1.05 # cme 전략이 너무 잦은 손절이 나가서 5%로 여유롭게 둠. 발산장 아니면 위기 피하지
-
-#     print(f"[INFO] sat_close={sat_close}, current_price={current_price}")
-#     print(f"[UPBIT] today_open={upbit_today_open}, ma18={upbit_ma18}, ma43={upbit_ma43}")
-#     print(f"[YEST] yest_open={upbit_yesterday_open}, y_ma18={yesterday_ma18}, y_ma43={yesterday_ma43}")
-#     print(f"[TREND4] changes={trend['changes']}, up_3days={trend['up_3days']}, down_3days={trend['down_3days']}")
-#     print(f"[TREND6] all_up_6days={vol_trend['all_up_6days']}, all_down_6days={vol_trend['all_down_6days']}, "
-#           f"high_vol_days={vol_trend['high_vol_days']}")
-#     print(now)
-
-#     if current_price <= sat_close * 0.99:
-#         if trend["down_3days"]:
-#             print("3일 연속 0.6% 이상 하락이라 롱 진입 금지")
-#             return
-#         if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
-#             print("6일 연속 하락 + 변동성 0.4%이상 5일이상 → 롱 진입 금지")
-#             return
-#         if yesterday_above_both and today_below_either:
-#             print("어제 MA위→오늘 MA아래 전환으로 롱 진입 금지")
-#             return
-
-#         exchange.create_market_buy_order(SOL_SYMBOL, amount)
-#         place_tp_long(SOL_SYMBOL, amount, tp_price_long)
-#         place_sl_long(SOL_SYMBOL, sl_price_long)        
-#         print(f"롱 진입 | amount={amount} | price={current_price} | tp={tp_price_long}")
-#         return
-
-#     elif current_price >= sat_close * 1.01:
-#         if trend["up_3days"]:
-#             print("3일 연속 0.6% 이상 상승이라 숏 진입 금지")
-#             return
-#         if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
-#             print("6일 연속 상승 + 변동성 0.4%이상 5일이상 → 숏 진입 금지")
-#             return
-#         if yesterday_not_above_both and today_above_both:
-#             print("어제 MA아래→오늘 MA위 전환으로 숏 진입 금지")
-#             return
-
-#         exchange.create_market_sell_order(SOL_SYMBOL, amount)
-#         place_tp_short(SOL_SYMBOL, amount, tp_price_short)
-#         place_sl_short(SOL_SYMBOL, sl_price_short)        
-#         print(f"숏 진입 | amount={amount} | price={current_price} | tp={tp_price_short}")
-#         return
-
-#     else:
-#         print("진입 조건 없음")
-
 
 # ===================== 메인 루프 =====================
 
@@ -1513,442 +1308,6 @@ def get_confirmed_candles_with_rsi(
         subset=['rsi', 'bb_middle', 'bb_upper', 'bb_lower']
     ).reset_index(drop=True)
 # ===================== RSI 다이버전스 판단 =====================
-
-#12============거래량 장대봉 추세 전략=======
-# 전역 변수 추가
-pending_volume_breakout_signal = {}
-
-def analyze_volume_breakout_strategy(
-    symbol,
-    timeframe,
-    df,
-    lookback=35,
-    monitor=30,
-    min_volume_abs=100_000,
-    volume_pct=0.71,
-    bullish_vol_threshold=650_000,
-    bullish_candle_pct=0.0065,
-    entry_drop_pct_bullish=0.0045,
-    entry_drop_pct_bearish=0.008,
-    entry_rise_pct_bullish=0.0045,
-    entry_rise_pct_bearish=0.008
-):
-    """
-    거래량 폭발 기준캔들 기반 진입 전략.
-    
-    - 기준캔들: 직전 35 봉 중 거래량 71% 초과하는 캔들 없어야 함 (절대값 100k 이상)
-    - 강세: 변동성 0.65% 이상 + 거래량 650k 이상
-    - 약세: 강세 조건 만족 안 하면
-    - 양봉 롱: 기준캔들 양봉 + 5 봉 전 종가 < 기준캔들 종가
-    - 음봉 숏: 기준캔들 음봉 + 5 봉 전 종가 > 기준캔들 종가
-    - 진입: 기준캔들 이후 30 봉 이내 진입 조건 만족하면 (다음봉 아님, 바로 진입)
-    - TP: 기준캔들 윗꼬리/아래꼬리 변동성 1% 이상이면 TP 축소
-    """
-    
-    if df is None or len(df) < 66:
-        return None
-    
-    # 현재 진행봉 제외 (df 는 확정봉만)
-    current_idx = len(df) - 1
-    
-    # 기준캔들 인덱스: 현재로부터 36 봉 전 (35 봉 전 + 기준캔들)
-    base_idx = current_idx - 36
-    
-    if base_idx < 0:
-        return None
-    
-    base_candle = df.iloc[base_idx]
-    base_volume = float(base_candle['volume'])
-    base_open = float(base_candle['open'])
-    base_close = float(base_candle['close'])
-    base_high = float(base_candle['high'])
-    base_low = float(base_candle['low'])
-    
-    # 1) 기준캔들 거래량 조건
-    # 절대값 100k 이상
-    if base_volume < min_volume_abs:
-        return None
-    
-    # 직전 35 봉 중 기준캔들 거래량의 71% 넘는 캔들 없어야 함
-    lookback_start = max(0, base_idx - lookback)
-    lookback_volumes = df.iloc[lookback_start:base_idx]['volume']
-    
-    if len(lookback_volumes) == 0:
-        return None
-    
-    max_lookback_volume = lookback_volumes.max()
-    if max_lookback_volume >= base_volume * volume_pct:
-        return None
-    
-    # 2) 기준캔들 강세/약세 조건
-    candle_volatility = abs(base_close - base_open) / base_open
-    is_bullish_base = (
-        candle_volatility >= bullish_candle_pct and
-        base_volume >= bullish_vol_threshold
-    )
-    
-    # 3) 기준캔들 방향
-    is_yangbong = base_close > base_open
-    is_eumbong = base_close < base_open
-    
-    # 5 봉 전 종가
-    five_bars_ago_idx = base_idx - 5
-    if five_bars_ago_idx < 0:
-        return None
-    
-    five_bars_ago_close = float(df.iloc[five_bars_ago_idx]['close'])
-    
-    # ✅ 양봉 롱 전략: 기준캔들 양봉 + 5 봉 전 종가 < 기준캔들 종가
-    cond_long_direction = is_yangbong and (five_bars_ago_close < base_close)
-    
-    # ✅ 음봉 숏 전략: 기준캔들 음봉 + 5 봉 전 종가 > 기준캔들 종가
-    cond_short_direction = is_eumbong and (five_bars_ago_close > base_close)
-    
-    if not (cond_long_direction or cond_short_direction):
-        return None
-    
-    # ✅ 기준캔들 윗꼬리/아래꼬리 변동성 계산
-    # 양봉: 윗꼬리 = high - close
-    # 음봉: 아래꼬리 = close - low
-    if is_yangbong:
-        upper_shadow = base_high - base_close
-        upper_shadow_volatility = upper_shadow / base_close
-    else:
-        lower_shadow = base_close - base_low
-        lower_shadow_volatility = lower_shadow / base_close
-    
-    # 4) 진입 조건 확인 (기준캔들 이후 30 봉 이내)
-    # 기준캔들 이후 1~30 봉
-    monitor_start = base_idx + 1
-    monitor_end = min(current_idx, base_idx + monitor)
-    
-    entry_signal = None
-    entry_price = None
-    tp_price = None
-    sl_price = None
-    entry_idx = None
-    
-    for i in range(monitor_start, monitor_end + 1):
-        monitor_candle = df.iloc[i]
-        monitor_close = float(monitor_candle['close'])
-        monitor_open = float(monitor_candle['open'])
-        
-        # 양봉 롱 전략
-        if cond_long_direction:
-            if is_bullish_base:
-                # 강세: -0.45%
-                drop_threshold = base_close * (1 - entry_drop_pct_bullish)
-            else:
-                # 약세: -0.8%
-                drop_threshold = base_close * (1 - entry_drop_pct_bearish)
-            
-            # ✅ 직전봉 종가가 Threshold 미만이면 진입 (다음봉 아님)
-            if monitor_close <= drop_threshold:
-                entry_idx = i
-                entry_price = monitor_open  # 진입가는 해당 봉의 시가
-                
-                # ✅ TP: 기준캔들 윗꼬리 변동성 1% 이상이면 (H+C)/2*1.002, 아니면 base_high*1.002
-                if is_yangbong and upper_shadow_volatility >= 0.01:
-                    tp_price = ((base_high + base_close) / 2) * 1.002
-                else:
-                    tp_price = base_high * 1.002
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.6%
-                sl_price = monitor_close * (1 - 0.006)
-                
-                entry_signal = "long"
-                break
-        
-        # 음봉 숏 전략
-        elif cond_short_direction:
-            if is_bullish_base:
-                # 강세: +0.45%
-                rise_threshold = base_close * (1 + entry_rise_pct_bullish)
-            else:
-                # 약세: +0.8%
-                rise_threshold = base_close * (1 + entry_rise_pct_bearish)
-            
-            # ✅ 직전봉 종가가 Threshold 초과이면 진입 (다음봉 아님)
-            if monitor_close >= rise_threshold:
-                entry_idx = i
-                entry_price = monitor_open  # 진입가는 해당 봉의 시가
-                
-                # ✅ TP: 기준캔들 아래꼬리 변동성 1% 이상이면 (L+C)/2*0.998, 아니면 base_low*0.998
-                if is_eumbong and lower_shadow_volatility >= 0.01:
-                    tp_price = ((base_low + base_close) / 2) * 0.998
-                else:
-                    tp_price = base_low * 0.998
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.6%
-                sl_price = monitor_close * (1 + 0.006)
-                
-                entry_signal = "short"
-                break
-    
-    if entry_signal is None or entry_idx is None:
-        return None
-    
-    return {
-        "signal": True,
-        "side": entry_signal,
-        "timeframe": timeframe,
-        "base_candle_index": base_idx,
-        "base_open": base_open,
-        "base_close": base_close,
-        "base_high": base_high,
-        "base_low": base_low,
-        "base_volume": base_volume,
-        "is_bullish_base": is_bullish_base,
-        "is_yangbong": is_yangbong,
-        "entry_price": entry_price,
-        "tp_price": tp_price,
-        "sl_price": sl_price,
-        "entry_candle_index": entry_idx,
-        "signal_candle_index": base_idx,  # ✅ 추가: 기준캔들 인덱스
-        "signal_candle_close": base_close,  # ✅ 추가: 기준캔들 종가
-    }
-
-
-def trade_volume_breakout_strategy(
-    symbol,
-    market_id,
-    timeframe='5m',
-    min_volume_abs=100_000,
-    volume_pct=0.71,
-    bullish_vol_threshold=650_000,
-    bullish_candle_pct=0.0065,
-    entry_drop_pct_bullish=0.0045,
-    entry_drop_pct_bearish=0.008,
-    entry_rise_pct_bullish=0.0045,
-    entry_rise_pct_bearish=0.008
-):
-    """
-    거래량 폭발 기준캔들 전략 실행.
-    - 기준캔들 발생 시 시그널로 받아들이고, 이후 30 봉 동안 진입 조건 모니터링
-    """
-    global last_volume_breakout_trade_time
-    global last_volume_breakout_5m, last_volume_breakout_15m, last_volume_breakout_1h
-    global pending_volume_breakout_signal
-    
-    now = time.time()
-    key = (symbol, timeframe)
-    
-    # 공통 60 초 쿨다운
-    if now - last_volume_breakout_trade_time < 60:
-        print(f"[{symbol} VOLUME_BREAKOUT] 60 초 쿨다운 중 진입 금지 (지난 체결 후 {now - last_volume_breakout_trade_time:.1f}초 경과)")
-        return
-    
-    # ✅ 5m 전용 쿨다운 (45 분)
-    if timeframe == '5m' and now - last_volume_breakout_5m < 2700:
-        minutes_ago = (now - last_volume_breakout_5m) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 5m] 최근 {minutes_ago:.1f}분 전에 5 분봉 매수됨 (45 분 내 중복매수 금지)")
-        return
-    
-    # ✅ 15m 전용 쿨다운 (45 분)
-    if timeframe == '15m' and now - last_volume_breakout_15m < 2700:
-        minutes_ago = (now - last_volume_breakout_15m) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 15m] 최근 {minutes_ago:.1f}분 전에 15 분봉 매수됨 (45 분 내 중복매수 금지)")
-        return
-    
-    # ✅ 1h 전용 쿨다운 (180 분)
-    if timeframe == '1h' and now - last_volume_breakout_1h < 10800:
-        minutes_ago = (now - last_volume_breakout_1h) / 60
-        print(f"[{symbol} VOLUME_BREAKOUT 1h] 최근 {minutes_ago:.1f}분 전에 1 시간봉 매수됨 (180 분 내 중복매수 금지)")
-        return
-    
-    # 마진/레버리지 세팅
-    set_margin_and_leverage(symbol)
-    
-    # ✅ 계좌 잔고 제약 제거
-    current_balance = get_available_usdt()
-    
-    # ✅ SOL 기존 롱 포지션 있으면 진입 금지
-    sol_position = get_position_amount('SOL/USDT')
-    if sol_position > 0:
-        print(f"[{symbol} VOLUME_BREAKOUT] SOL 기존 롱 포지션 있음: {sol_position}개")
-        return
-    
-    # 데이터 조회 (기존 함수 사용)
-    df = get_confirmed_candles_with_rsi(symbol, timeframe, count=70)
-    if df is None or len(df) < 66:
-        print(f"[{symbol} VOLUME_BREAKOUT] 데이터 부족")
-        return
-    
-    # 시그널 분석
-    sig = analyze_volume_breakout_strategy(
-        symbol=symbol,
-        timeframe=timeframe,
-        df=df,
-        lookback=35,
-        monitor=30,
-        min_volume_abs=min_volume_abs,
-        volume_pct=volume_pct,
-        bullish_vol_threshold=bullish_vol_threshold,
-        bullish_candle_pct=bullish_candle_pct,
-        entry_drop_pct_bullish=entry_drop_pct_bullish,
-        entry_drop_pct_bearish=entry_drop_pct_bearish,
-        entry_rise_pct_bullish=entry_rise_pct_bullish,
-        entry_rise_pct_bearish=entry_rise_pct_bearish
-    )
-    
-    # 1) 기준캔들 시그널 발생 확인
-    if sig and sig["signal"]:
-        if key not in pending_volume_breakout_signal:
-            pending_volume_breakout_signal[key] = {
-                "signal_info": sig,
-                "signal_time": now,
-                "signal_candle_index": sig["signal_candle_index"],
-                "signal_candle_close": sig["signal_candle_close"],
-                "base_high": sig["base_high"],
-                "base_low": sig["base_low"],
-                "is_bullish_base": sig["is_bullish_base"],
-                "is_yangbong": sig["is_yangbong"],
-            }
-            print(f"[{symbol} VOLUME_BREAKOUT] 기준캔들 시그널 발생 → 30 봉 동안 진입 조건 모니터링 (timeframe={timeframe})")
-        # ✅ 기준캔들 시그널 발생 시 바로 진입하지 않음 (모니터링 시작)
-        return
-    
-    # 2) 대기 중인 신호가 있으면, 진입 조건 확인
-    if key not in pending_volume_breakout_signal:
-        return
-    
-    pending = pending_volume_breakout_signal[key]
-    sig_info = pending["signal_info"]
-    signal_candle_index = pending["signal_candle_index"]
-    signal_candle_close = pending["signal_candle_close"]
-    base_high = pending["base_high"]
-    base_low = pending["base_low"]
-    is_bullish_base = pending["is_bullish_base"]
-    is_yangbong = pending["is_yangbong"]
-    
-    # 기준캔들 이후 30 봉 초과 확인
-    current_candle_index = len(df) - 1
-    if current_candle_index - signal_candle_index > 30:
-        print(f"[{symbol} VOLUME_BREAKOUT] 기준캔들 이후 30 봉 초과 → 대기 상태 초기화 (timeframe={timeframe})")
-        del pending_volume_breakout_signal[key]
-        return
-    
-    # 3) 진입 조건 확인 (기준캔들 이후 1~30 봉)
-    monitor_start = signal_candle_index + 1
-    monitor_end = current_candle_index
-    
-    entry_price = None
-    tp_price = None
-    sl_price = None
-    entry_idx = None
-    
-    for i in range(monitor_start, monitor_end + 1):
-        monitor_candle = df.iloc[i]
-        monitor_close = float(monitor_candle['close'])
-        monitor_open = float(monitor_candle['open'])
-        
-        # 양봉 롱 전략
-        if is_yangbong:
-            if is_bullish_base:
-                # 강세: -0.45%
-                drop_threshold = signal_candle_close * (1 - entry_drop_pct_bullish)
-            else:
-                # 약세: -0.8%
-                drop_threshold = signal_candle_close * (1 - entry_drop_pct_bearish)
-            
-            if monitor_close <= drop_threshold:
-                entry_idx = i
-                entry_price = monitor_open
-                
-                # TP: 기준캔들 윗꼬리 변동성 1% 이상이면 (H+C)/2*1.002, 아니면 base_high*1.002
-                upper_shadow = base_high - signal_candle_close
-                upper_shadow_volatility = upper_shadow / signal_candle_close
-                if is_yangbong and upper_shadow_volatility >= 0.01:
-                    tp_price = ((base_high + signal_candle_close) / 2) * 1.002
-                else:
-                    tp_price = base_high * 1.002
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 -0.6%
-                sl_price = monitor_close * (1 - 0.006)
-                break
-        
-        # 음봉 숏 전략
-        else:
-            if is_bullish_base:
-                # 강세: +0.45%
-                rise_threshold = signal_candle_close * (1 + entry_rise_pct_bullish)
-            else:
-                # 약세: +0.8%
-                rise_threshold = signal_candle_close * (1 + entry_rise_pct_bearish)
-            
-            if monitor_close >= rise_threshold:
-                entry_idx = i
-                entry_price = monitor_open
-                
-                # TP: 기준캔들 아래꼬리 변동성 1% 이상이면 (L+C)/2*0.998, 아니면 base_low*0.998
-                lower_shadow = signal_candle_close - base_low
-                lower_shadow_volatility = lower_shadow / signal_candle_close
-                if not is_yangbong and lower_shadow_volatility >= 0.01:
-                    tp_price = ((base_low + signal_candle_close) / 2) * 0.998
-                else:
-                    tp_price = base_low * 0.998
-                
-                # SL: 진입기준 직전봉 종가 (monitor_close) 기준 +0.6%
-                sl_price = monitor_close * (1 + 0.006)
-                break
-    
-    if entry_price is None:
-        return
-    
-    # 4) 실제 매수 로직
-    current_price = entry_price
-    margin_to_use = current_balance * 0.5
-    notional = margin_to_use * LEVERAGE
-    amount = round(notional / current_price, 3)
-    
-    if amount <= 0:
-        print(f"[{symbol} VOLUME_BREAKOUT] 주문 수량이 0 이라서 중단")
-        del pending_volume_breakout_signal[key]
-        return
-    
-    try:
-        if is_yangbong:
-            order = exchange.create_market_buy_order(symbol, amount)
-        else:
-            order = exchange.create_market_sell_order(symbol, amount)
-        
-        print(f"[{symbol} VOLUME_BREAKOUT] ORDER RESULT={order}")
-    except Exception as e:
-        print(f"[{symbol} VOLUME_BREAKOUT] 주문 실패: {e}")
-        return
-    
-    # 쿨다운 갱신
-    last_volume_breakout_trade_time = time.time()
-    if timeframe == '5m':
-        last_volume_breakout_5m = time.time()
-    elif timeframe == '15m':
-        last_volume_breakout_15m = time.time()
-    elif timeframe == '1h':
-        last_volume_breakout_1h = time.time()
-    
-    # TP/SL 설정
-    if is_yangbong:
-        place_tp_long(symbol, amount, tp_price)
-        place_sl_long(symbol, sl_price)
-    else:
-        place_tp_short(symbol, amount, tp_price)
-        place_sl_short(symbol, sl_price)
-
-    
-    print(
-        f"[{symbol} VOLUME_BREAKOUT] {('LONG' if is_yangbong else 'SHORT')} 진입 | "
-        f"price={entry_price} | tp={tp_price} | sl={sl_price}"
-    )
-    
-    # 진입 완료 후 대기 상태 초기화
-    del pending_volume_breakout_signal[key]    
-
-
-#============거래량 장대봉 추세 전략=======
-
-
-
-
 
 
 # def analyze_bullish_divergence(symbol, timeframe, rsi_raise_pct=0.02, min_volatility=0.003):
@@ -2576,8 +1935,7 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         elif timeframe == '15m':
             last_sol_buy_time_15m = time.time()
             last_xrp_short_15m = time.time()    # ← 추가
-        elif timeframe == '5m':
-            last_link_short_5m = time.time()    # ← 추가            
+        
 
         place_tp_short(symbol, amount, tp_price)
         # 기존 손절 주문 대체 sl_price 기준으로 DOGE 수량 계산
@@ -2941,10 +2299,10 @@ def analyze_bullish_divergence_close(
     cond_rsi_15_2_relaxed_9 = (
         prev_candle['rsi']
         >= lowest_rsi_7
-        * 1.09
+        * 1.15
     )
 
-    # RSI +9% 조건에서는
+    # RSI +15% 조건에서는
     # 직전봉 종가가 과거 최저 종가 +0.02% 이하이면 통과
     cond_price_15_2_relaxed_9 = (
         prev_candle['close']
@@ -2959,7 +2317,7 @@ def analyze_bullish_divergence_close(
     )
 
     # -------------------------------------------------
-    # RSI +5% 완화 조건
+    # RSI +7% 완화 조건
     # -------------------------------------------------
 
     # base_7 음봉 최저 RSI보다
@@ -2990,10 +2348,10 @@ def analyze_bullish_divergence_close(
     # close 기준 구간 변동성 조건
     # -------------------------------------------------
 
-    # range_volatility가 구간 변동성 1% 이상
+    # range_volatility가 구간 변동성 0.85% 이상
     cond_range_volatility_15_2 = (
         range_volatility_15
-        >= 0.01
+        >= 0.085
     )
 
     # -------------------------------------------------
@@ -3016,7 +2374,7 @@ def analyze_bullish_divergence_close(
     )
 
     # -------------------------------------------------
-    # RSI +9% 완화 신호
+    # RSI +15% 완화 신호
     # -------------------------------------------------
 
     signal_15_2_relaxed_9 = (
@@ -3120,7 +2478,7 @@ def analyze_bullish_divergence_close(
 
     # 추가 조건:
     # confirm_30 범위 안의 음봉 lowest close보다
-    # 직전봉 close가 0.2% 이상 낮아야 함
+    # 직전봉 close가 0.3% 이상 낮아야 함
     cond_price_30_confirm = (
         prev_candle['close']
         < lowest_bearish_close_30_confirm
@@ -3133,7 +2491,7 @@ def analyze_bullish_divergence_close(
     cond_rsi_30 = (
         prev_candle['rsi']
         >= lowest_rsi_30
-        * (0.98)
+        * (0.98)  #2% 낮은데도 들어가네?
     )
 
     # 직전봉 몸통 변동성 조건
@@ -3328,8 +2686,8 @@ def analyze_bearish_divergence_close(
     # 직전 확정봉
     prev_candle = df.iloc[-1]
 
-    # 숏은 6 봉 기준
-    base_15 = df.iloc[-8:-2]  # -3,-4,-5,-6,-7,-8 직전봉-1
+    # 숏은 9 봉 기준
+    base_15 = df.iloc[-9:-2]  # -3,-4,-5,-6,-7,-8,-9 직전봉-1
 
     # 변동성 계산용 구간
     base_16 = df.iloc[-17:-1]
@@ -3352,7 +2710,7 @@ def analyze_bearish_divergence_close(
     # base_7 종가 기준 최고값과 최저값을 사용합니다.
     # (구간 최고 종가 - 구간 최저 종가) / 구간 최고 종가
     # 조건:
-    # 최근 7개 기준봉 구간의 변동성이 1% 초과여야 합니다.
+    # 최근 7개 기준봉 구간의 변동성이 0.85% 초과여야 합니다.
     range_high_7 = base_7['close'].max()
     range_low_7 = base_7['close'].min()
 
@@ -3365,7 +2723,7 @@ def analyze_bearish_divergence_close(
     )
 
     cond_range_volatility_7 = (
-        range_volatility_7 > 0.01
+        range_volatility_7 > 0.0085
     )
 
 
@@ -3481,10 +2839,10 @@ def analyze_bearish_divergence_close(
     highest_close_15_2 = base_15['close'].max()
 
     # close 기준 가격 조건:
-    # 15m, 1h 모두 0.4% 이상 높아야 함
+    # 15m, 1h 모두 0.3% 이상 높아야 함
     cond_price_15_2 = (
         prev_candle['close']
-        > highest_close_15_2 * (1 + 0.004)
+        > highest_close_15_2 * (1 + 0.003)
     )
 
     # close 기준 변동성 조건:
@@ -5263,8 +4621,8 @@ def analyze_bullish_divergence_close_new(symbol, timeframe, df_cache, min_volati
     lowest_close = base_7['close'].min()
     
     # 기준 구간의 최고/최저 종가로 변동성 계산
-    range_high = base_16['close'].max()
-    range_low  = base_16['close'].min()
+    range_high = base_7['close'].max()
+    range_low  = base_7['close'].min()
     range_volatility = (range_high - range_low) / range_high  # 이전 변동성%
 
     # 기존 상승 다이버전스 기본 조건
@@ -5463,7 +4821,7 @@ def trade_rsi_close_strategy_eth_long_new(
         print(f"[{symbol} ETH_LONG_NEW] 진입 조건 없음")
         return
 
-    if bull["range_volatility"] < 0.015: # 직전 15봉 변동성 1.5% 미만시 진입 안함
+    if bull["range_volatility"] < 0.012: # 직전 7봉 변동성 1.2% 미만시 진입 안함
         print(f"[{symbol} ETH_LONG_NEW] range_volatility {bull['range_volatility']*100:.2f}% 미만으로 진입 금지")
         return
 
@@ -6716,7 +6074,7 @@ def trade_rsi_close_strategy_xrp_sol(
             print(f"[{symbol} XRP_LONG] XRP 롱 포지션 없음")
             return
         n_xrp = abs(xrp_position)
-        sol_threshold = 60 * n_xrp
+        sol_threshold = 30 * n_xrp
         current_sol = sol_position if sol_position > 0 else 0
         print(f"[{symbol} XRP_LONG] XRP={n_xrp}, SOL롱={current_sol}, 기준={sol_threshold}")
         if current_sol > sol_threshold:
@@ -6727,7 +6085,7 @@ def trade_rsi_close_strategy_xrp_sol(
             print(f"[{symbol} XRP_SHORT] XRP 숏 포지션 없음")
             return
         n_xrp = abs(xrp_position)
-        sol_threshold = 60 * n_xrp
+        sol_threshold = 30 * n_xrp
         current_sol = -sol_position if sol_position < 0 else 0
         print(f"[{symbol} XRP_SHORT] XRP={n_xrp}, SOL숏={current_sol}, 기준={sol_threshold}")
         if current_sol > sol_threshold:
@@ -7063,6 +6421,7 @@ def _link_tail_signal_result(
         "special_case_3": signal_type == "special3",
         "special_case_4": signal_type == "special4",
         "special_case_5": signal_type == "special5",
+        "special_case_6": signal_type == "special6",        
         "entry_reference_price": float(entry_reference),
         "entry_trigger_price": float(entry_trigger),
         "current_price_condition": bool(price_condition),
@@ -7500,6 +6859,285 @@ def analyze_sol_link_special5(
     })
 
     return result
+
+# =================================================
+# 스페셜6
+#
+# - 최근 8개 확정봉에서 최신 기준봉 선택
+# - 기준봉 자체의 BB 이탈 조건 포함
+# - 최신 기준봉 선택 후 이전 기준봉으로 돌아가지 않음
+# =================================================
+
+def analyze_sol_link_special6(
+    df,
+    side,
+    current_price
+):
+    if side not in ("long", "short"):
+        raise ValueError(
+            "side는 'long' 또는 'short'이어야 합니다."
+        )
+
+    # 현재 진행봉 1개 + 확정봉 8개 필요
+    if df is None or len(df) < 9:
+        return None
+
+    current_price = float(current_price)
+
+    if not (0 < current_price < float("inf")):
+        return None
+
+    # =============================================
+    # 직전 확정봉의 BB
+    # =============================================
+    prev_candle = df.iloc[-2]
+
+    prev_bb_upper = float(prev_candle["bb_upper"])
+    prev_bb_lower = float(prev_candle["bb_lower"])
+
+    comparison_bb = (
+        prev_bb_upper
+        if side == "long"
+        else prev_bb_lower
+    )
+
+    if not (0 < comparison_bb < float("inf")):
+        return None
+
+    tail_function = (
+        get_long_lower_tail_info
+        if side == "long"
+        else get_short_upper_tail_info
+    )
+
+    selected = None
+
+    # =============================================
+    # 1. 가장 최신 기준봉 선택
+    # 직1전 → 직8전 순서
+    # =============================================
+    for bars_ago in range(1, 9):
+        position = len(df) - 1 - bars_ago
+        candle = df.iloc[position]
+
+        o = float(candle["open"])
+        h = float(candle["high"])
+        l = float(candle["low"])
+        c = float(candle["close"])
+
+        if not all(
+            0 < value < float("inf")
+            for value in (o, h, l, c)
+        ):
+            continue
+
+        info = tail_function(candle)
+
+        # -----------------------------------------
+        # 조건 1: 방향 / 몸통 / 꼬리
+        # 롱: 음봉 + 아래꼬리
+        # 숏: 양봉 + 윗꼬리
+        # 몸통 변동성 >= 0.2%
+        # 꼬리 / 몸통 >= 1/2
+        # 꼬리 길이 > 기준봉 종가 × 0.002
+        # -----------------------------------------
+        if side == "long":
+            direction_condition = c < o
+            tail_length = info["lower_tail"]
+        else:
+            direction_condition = c > o
+            tail_length = info["upper_tail"]
+
+        base_condition = (
+            direction_condition
+            and info["body_volatility"] >= 0.002
+            and info["tail_ratio"] >= 0.50
+            and tail_length > c * 0.002
+        )
+
+        if not base_condition:
+            continue
+
+        # -----------------------------------------
+        # 조건 2-A: 기준봉 자체의 BB 이탈 기준봉 당시 BB 값을 사용
+        # 롱: 기준봉 low < 기준봉 BB 하단
+        # 숏: 기준봉 high > 기준봉 BB 상단
+        # -----------------------------------------
+        if side == "long":
+            base_bb_value = float(candle["bb_lower"])
+
+            base_bb_break_condition = (
+                l < base_bb_value
+            )
+        else:
+            base_bb_value = float(candle["bb_upper"])
+
+            base_bb_break_condition = (
+                h > base_bb_value
+            )
+
+        if not (0 < base_bb_value < float("inf")):
+            continue
+
+        # -----------------------------------------
+        # 조건 2-B: 직전 확정봉 BB와 기준봉 가격 비교
+        # 롱:
+        # 직전봉 BB 상단 > 기준봉 high × 1.0015
+        # 숏:
+        # 직전봉 BB 하단 < 기준봉 low × 0.9985
+        # -----------------------------------------
+        if side == "long":
+            prev_bb_condition = (
+                prev_bb_upper > h * 1.0015
+            )
+        else:
+            prev_bb_condition = (
+                prev_bb_lower < l * 0.9985
+            )
+
+        bb_condition = (
+            base_bb_break_condition
+            and prev_bb_condition
+        )
+
+        if not bb_condition:
+            continue
+
+        # 모든 기준봉 자체 조건을 만족한
+        # 가장 최신 봉을 선택하고 검색 종료
+        selected = {
+            "bars_ago": bars_ago,
+            "position": position,
+            "candle": candle,
+            "info": info,
+            "tail_length": tail_length,
+            "high": h,
+            "low": l,
+            "base_bb_value": base_bb_value,
+            "base_bb_break_condition": (
+                base_bb_break_condition
+            ),
+            "prev_bb_condition": prev_bb_condition,
+        }
+        break
+
+    if selected is None:
+        return None
+
+    # =============================================
+    # 2. 선택한 최신 기준봉만 사용
+    # 이후 조건이 실패해도 이전 기준봉으로 돌아가지 않음
+    # =============================================
+    candle = selected["candle"]
+    info = selected["info"]
+    bars_ago = selected["bars_ago"]
+    position = selected["position"]
+
+    base_high = selected["high"]
+    base_low = selected["low"]
+
+    # 기준봉 다음부터 직전 확정봉까지.
+    # 기준봉 자체와 현재 진행봉은 제외.
+    between = df.iloc[position + 1:-1]
+
+    # =============================================
+    # 3. 기준봉 이후 확정봉의 가격 유지 조건
+    # 롱: 모든 low > 기준봉 low × 1.0005
+    # 숏: 모든 high < 기준봉 high × 0.9995
+    # =============================================
+    if side == "long":
+        hold_threshold = base_low * 1.0005
+        between_prices = between["low"].astype(float)
+    else:
+        hold_threshold = base_high * 0.9995
+        between_prices = between["high"].astype(float)
+
+    valid_between = (
+        between_prices.gt(0)
+        & between_prices.lt(float("inf"))
+    )
+
+    if not bool(valid_between.all()):
+        return None
+
+    if side == "long":
+        hold_condition = bool(
+            (between_prices > hold_threshold).all()
+        )
+    else:
+        hold_condition = bool(
+            (between_prices < hold_threshold).all()
+        )
+
+    if not hold_condition:
+        return None
+
+    # =============================================
+    # 4. 현재가 진입 조건
+    # 롱: 현재가 < 기준봉 low × 0.9995
+    # 숏: 현재가 > 기준봉 high × 1.0005
+    # =============================================
+    if side == "long":
+        entry_reference = base_low
+        trigger = base_low * 0.9995
+        price_condition = current_price < trigger
+    else:
+        entry_reference = base_high
+        trigger = base_high * 1.0005
+        price_condition = current_price > trigger
+
+    if not price_condition:
+        return None
+
+    # =============================================
+    # 5. 스페셜6 신호 반환
+    # =============================================
+    result = _link_tail_signal_result(
+        side=side,
+        signal_type="special6",
+        candle=candle,
+        candle_name=f"prev{bars_ago}",
+        current_price=current_price,
+        tail_info=info,
+        entry_reference=entry_reference,
+        entry_trigger=trigger,
+        price_condition=True,
+    )
+
+    result.update({
+        "special_case_6": True,
+        "reason": (
+            f"{side} 스페셜6 최신 기준봉 진입 | "
+            f"기준=직{bars_ago}전봉 | "
+            f"진입기준가={trigger:.6f}"
+        ),
+        "special6_bars_ago": bars_ago,
+        "special6_tail_length": float(
+            selected["tail_length"]
+        ),
+
+        "special6_bb_condition": True,
+        "special6_base_bb_value": float(
+            selected["base_bb_value"]
+        ),
+        "special6_base_bb_break_condition": bool(
+            selected["base_bb_break_condition"]
+        ),
+        "special6_prev_bb_condition": bool(
+            selected["prev_bb_condition"]
+        ),
+        "special6_prev_bb_upper": prev_bb_upper,
+        "special6_prev_bb_lower": prev_bb_lower,
+
+        "special6_hold_threshold": float(
+            hold_threshold
+        ),
+        "special6_hold_condition": True,
+        "special6_between_count": len(between),
+    })
+
+    return result
+
 # =================================================
 # 5. 통합 조건 분석
 # =================================================
@@ -7522,6 +7160,28 @@ def analyze_sol_link_tail_signal(
             count=100
         )
 
+    # =============================================
+    # 스페셜6 선확인
+    # 공통 캔들 필터를 적용하지 않음
+    # =============================================
+    if df is not None and len(df) >= 9:
+        special6_current_price = float(
+            df.iloc[-1]["close"]
+        )
+
+        result = analyze_sol_link_special6(
+            df=df,
+            side=side,
+            current_price=special6_current_price
+        )
+
+        if result is not None:
+            result.update({
+                "common_candle_filters_applied": False,
+                "common_candle_filters_bypassed": True,
+            })
+            return result
+
     # 현재봉 1개 + 최근 확정봉 6개 필요
     if df is None or len(df) < 7:
         return {
@@ -7533,6 +7193,8 @@ def analyze_sol_link_tail_signal(
             "special_case_2": False,
             "special_case_3": False,
             "special_case_4": False,
+            "special_case_5": False,
+            "special_case_6": False,
         }
 
     current_candle = df.iloc[-1]
@@ -7846,15 +7508,15 @@ def analyze_sol_link_tail_signal(
     # # =============================================
     # # 스페셜4  해당전략은 케이스도 낮은데다가 너무 딜레이 시킴
     # # =============================================
-    # result = analyze_sol_link_special4(
-    #     df=df,
-    #     side=side,
-    #     current_price=current_price
-    # )
+    result = analyze_sol_link_special4(
+        df=df,
+        side=side,
+        current_price=current_price
+    )
 
-    # if result is not None:
-    #     result.update(volatility_debug)
-    #     return result
+    if result is not None:
+        result.update(volatility_debug)
+        return result
 
     # =============================================
     # 기존 스페셜2
@@ -8054,7 +7716,7 @@ def trade_link_tail_strategy(
     now = time.time()
 
     # =============================================
-    # 기존 쿨다운 숫자 유지
+    # 1. 기존 쿨다운 유지
     # =============================================
     if side == "long":
         if now - last_link_tail_long_trade_time < 1800:
@@ -8088,7 +7750,7 @@ def trade_link_tail_strategy(
         if now - last_link_tail_short_trade_time < 1800:
             print(
                 f"[{symbol} LINK_TAIL_SHORT] "
-                "2700초 공통 쿨다운 중 진입 금지"
+                "1800초 공통 쿨다운 중 진입 금지"
             )
             return
 
@@ -8098,7 +7760,7 @@ def trade_link_tail_strategy(
         ):
             print(
                 f"[{symbol} LINK_TAIL_SHORT 15m] "
-                "2700초 타임프레임 쿨다운 중 진입 금지"
+                "1800초 타임프레임 쿨다운 중 진입 금지"
             )
             return
 
@@ -8118,7 +7780,7 @@ def trade_link_tail_strategy(
         )
 
     # =============================================
-    # 기존 증거금 / 잔고 로직 그대로 유지
+    # 2. 기존 증거금 / 잔고 로직 유지
     # =============================================
     set_margin_and_leverage(symbol)
 
@@ -8133,7 +7795,7 @@ def trade_link_tail_strategy(
         return
 
     # =============================================
-    # 기존 LINK / SOL 포지션 확인
+    # 3. 기존 LINK / SOL 포지션 확인
     # =============================================
     link_position = get_position_amount("LINK/USDT")
     sol_position = get_position_amount(symbol)
@@ -8167,16 +7829,19 @@ def trade_link_tail_strategy(
 
     had_existing_same_side_position = current_sol > 0
 
+    # 주문 전 SOL이 전혀 없었을 때만 DOGE 기준 생성
+    should_create_doge_stop = (sol_position == 0)
+
     print(
         f"[{symbol} LINK_TAIL_{side.upper()}] "
         f"LINK={n_link}, "
         f"SOL동일방향={current_sol}, "
         f"기준={sol_threshold}, "
-        f"기존포지션={had_existing_same_side_position}"
+        f"기존동일방향포지션={had_existing_same_side_position}, "
+        f"DOGE신규생성={should_create_doge_stop}"
     )
 
-    # 기존 방식 유지:
-    # 주문 전 보유량이 기준을 초과한 경우만 차단.
+    # 주문 전 보유량 기준 검사 — 기존 방식 유지
     if current_sol > sol_threshold:
         print(
             f"[{symbol} LINK_TAIL_{side.upper()}] "
@@ -8185,7 +7850,7 @@ def trade_link_tail_strategy(
         return
 
     # =============================================
-    # 기존 현재가 / 주문 수량 계산
+    # 4. 기존 현재가 / 주문 수량 계산
     # =============================================
     current_price = float(
         exchange.fetch_ticker(symbol)["last"]
@@ -8210,7 +7875,7 @@ def trade_link_tail_strategy(
         return
 
     # =============================================
-    # SOL 캔들 조회 / 통합 조건 분석
+    # 5. SOL 캔들 조회 / 통합 조건 분석
     # =============================================
     df_sol = get_candles_with_bb_current(
         symbol=symbol,
@@ -8238,25 +7903,43 @@ def trade_link_tail_strategy(
         return
 
     # =============================================
-    # TP 가격 계산
+    # 6. TP 가격 계산
     #
-    # 숏: 모든 전략 -0.5%로 통일
-    # 롱: 기존 전략별 TP 유지
+    # 스페셜6:
+    # 기준봉 시가와 0.6% 목표 중 익절 폭이 큰 쪽
+    #
+    # 그 외 숏:
+    # 최근 제공 코드의 -0.55% 유지
+    #
+    # 그 외 롱:
+    # 기존 전략별 TP 유지
     # =============================================
     signal_type = tail_signal.get("signal_type")
 
-    # -----------------------------------------
-    # 숏 전체 공통 TP
-    # 일반 / 스페셜1 / 스페셜2 / 스페셜3 / 스페셜4
-    # -----------------------------------------
-    if side == "short":
-        tp_price = current_price * 0.9955
+    # 스페셜6은 반드시 숏 공통 분기보다 먼저 처리
+    if signal_type == "special6":
+        base_open = float(
+            tail_signal["base_candle_open"]
+        )
 
-    # -----------------------------------------
-    # 아래부터 롱 전용 TP
-    # -----------------------------------------
+        if side == "long":
+            tp_price = max(
+                base_open,
+                current_price * 1.006
+            )
 
-    # 스페셜4 롱: 기준봉 high
+        else:
+            tp_price = min(
+                base_open,
+                current_price * 0.994
+            )
+
+    # 독립 if가 아닌 elif로 연결:
+    # 스페셜6 TP 덮어쓰기 방지
+    elif side == "short":
+        tp_price = current_price * 0.9945
+
+    # 스페셜4 롱
     elif signal_type == "special4":
         tp_price = float(
             tail_signal["special_tp_price"]
@@ -8270,26 +7953,25 @@ def trade_link_tail_strategy(
             )
             return
 
-    # 스페셜2 롱: +1%
+    # 스페셜2 롱
     elif signal_type == "special2":
         tp_price = current_price * 1.01
 
-    # 스페셜1 롱: 기준봉 시가
+    # 스페셜1 롱
     elif tail_signal["special_case"]:
         tp_price = float(
             tail_signal["special_tp_price"]
         )
 
-        # 기존 보정 유지
         if tp_price <= current_price:
             tp_price = current_price * (1 + tp_pct)
 
-    # 일반 / 스페셜3 롱: 기존 기본 TP
+    # 일반 / 스페셜3 / 스페셜5 롱
     else:
         tp_price = current_price * (1 + tp_pct)
 
     # =============================================
-    # 기존 SOL 롱 주문 / 쿨다운 갱신 / TP
+    # 7. SOL 시장가 진입
     # =============================================
     if side == "long":
         exchange.create_market_buy_order(
@@ -8305,38 +7987,6 @@ def trade_link_tail_strategy(
         elif timeframe == "1h":
             last_link_tail_long_1h = time.time()
 
-        if not had_existing_same_side_position:
-            place_tp_long(
-                symbol,
-                amount,
-                tp_price
-            )
-
-            print(
-                f"[{symbol} LINK_TAIL_LONG] "
-                "롱 진입 / TP 생성 | "
-                f"amount={amount} | "
-                f"price={current_price} | "
-                f"tp={tp_price} | "
-                f"signal_type={signal_type} | "
-                f"base={tail_signal['base_candle_name']}"
-            )
-
-        else:
-            print(
-                f"[{symbol} LINK_TAIL_LONG] "
-                "롱 추가 진입 / 기존 TP 유지 / "
-                "새 TP 미생성 | "
-                f"amount={amount} | "
-                f"price={current_price} | "
-                f"기존 SOL롱={current_sol} | "
-                f"signal_type={signal_type} | "
-                f"base={tail_signal['base_candle_name']}"
-            )
-
-    # =============================================
-    # 기존 SOL 숏 주문 / 쿨다운 갱신 / TP
-    # =============================================
     else:
         exchange.create_market_sell_order(
             symbol,
@@ -8351,34 +8001,120 @@ def trade_link_tail_strategy(
         elif timeframe == "1h":
             last_link_tail_short_1h = time.time()
 
-        if not had_existing_same_side_position:
-            place_tp_short(
-                symbol,
-                amount,
-                tp_price
+    # =============================================
+    # 8. 기존 같은 방향 SOL이 있으면 추가 진입만
+    # TP / DOGE 새로 생성하지 않음
+    # =============================================
+    if had_existing_same_side_position:
+        print(
+            f"[{symbol} LINK_TAIL_{side.upper()}] "
+            "추가 진입 / 기존 TP·DOGE 기준 유지 | "
+            f"amount={amount} | "
+            f"price={current_price} | "
+            f"기존 동일방향 SOL={current_sol} | "
+            f"signal_type={signal_type} | "
+            f"base={tail_signal['base_candle_name']}"
+        )
+        return
+
+    # =============================================
+    # 9. 기존 같은 방향 SOL이 없으면 TP 생성
+    # 기존 규칙 유지
+    # =============================================
+    if side == "long":
+        place_tp_long(
+            symbol,
+            amount,
+            tp_price
+        )
+
+    else:
+        place_tp_short(
+            symbol,
+            amount,
+            tp_price
+        )
+
+    # =============================================
+    # 10. SOL이 전혀 없던 첫 진입에만 DOGE 생성
+    #
+    # 롱: current_price * 0.96 → 소수 첫째 자리 버림
+    # 숏: current_price * 1.04 → 소수 첫째 자리 올림
+    #
+    # 반대 방향 SOL이 있었어도 DOGE는 생성하지 않음
+    # =============================================
+    if should_create_doge_stop:
+        try:
+            doge_stop_info = calculate_doge_amount_from_sl(
+                entry_price=current_price,
+                side=side,
+                sl_pct=0.04
             )
 
-            print(
-                f"[{symbol} LINK_TAIL_SHORT] "
-                "숏 진입 / TP 생성 | "
-                f"amount={amount} | "
-                f"price={current_price} | "
-                f"tp={tp_price} | "
-                f"signal_type={signal_type} | "
-                f"base={tail_signal['base_candle_name']}"
+            doge_amount = doge_stop_info["doge_amount"]
+            doge_reference_price = (
+                doge_stop_info["sl_reference_price"]
             )
 
-        else:
+            buy_doge_for_sol_stop(doge_amount)
+
+        except Exception as e:
             print(
-                f"[{symbol} LINK_TAIL_SHORT] "
-                "숏 추가 진입 / 기존 TP 유지 / "
-                "새 TP 미생성 | "
-                f"amount={amount} | "
-                f"price={current_price} | "
-                f"기존 SOL숏={current_sol} | "
-                f"signal_type={signal_type} | "
-                f"base={tail_signal['base_candle_name']}"
+                f"[{symbol} {timeframe}] "
+                f"DOGE 손절 기준 생성 실패: {e}"
             )
+
+            # 요청하신 기존 방식:
+            # DOGE 등록 실패 시 SOL 긴급 청산 시도
+            try:
+                if get_position_amount(symbol) != 0:
+                    close_position_market(
+                        symbol,
+                        market_id
+                    )
+
+            except Exception as close_error:
+                print(
+                    f"[{symbol} {timeframe}] "
+                    "DOGE 등록 실패 후 "
+                    "SOL 긴급 청산 실패: "
+                    f"{close_error}"
+                )
+
+            print(
+                f"[{symbol} {timeframe}] "
+                "SOL/DOGE 실제 포지션 및 "
+                "기존 TP 주문 상태 확인 필요"
+            )
+            return
+
+        print(
+            f"[{symbol} LINK_TAIL_{side.upper()}] "
+            "첫 진입 / TP 및 DOGE 손절 기준 생성 | "
+            f"amount={amount} | "
+            f"price={current_price} | "
+            f"tp={tp_price} | "
+            f"DOGE={doge_amount} | "
+            f"DOGE 기준가={doge_reference_price:.1f} | "
+            f"signal_type={signal_type} | "
+            f"base={tail_signal['base_candle_name']}"
+        )
+
+    else:
+        # 반대 방향 SOL이 있었던 경우:
+        # 기존 TP 규칙은 유지하되 새 DOGE는 생성하지 않음
+        print(
+            f"[{symbol} LINK_TAIL_{side.upper()}] "
+            "주문 실행 / TP 생성 / "
+            "주문 전 SOL 보유로 DOGE 신규 생성 생략 | "
+            f"amount={amount} | "
+            f"price={current_price} | "
+            f"tp={tp_price} | "
+            f"signal_type={signal_type} | "
+            f"base={tail_signal['base_candle_name']}"
+        )
+
+
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
 
@@ -8479,19 +8215,19 @@ while True:
         # -------------------------------------------------
         # SHIB 보유 시 SHIB 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
-        shib_position = get_position_amount('SHIB/USDT')
+        # shib_position = get_position_amount('SHIB/USDT')
 
-        if shib_position != 0:
-            # SHIB 보유 중 → SHIB 전략만 구동
-            trade_shib_ma20_25_breakout(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='1h'
-            )
+        # if shib_position != 0:
+        #     # SHIB 보유 중 → SHIB 전략만 구동
+        #     trade_shib_ma20_25_breakout(
+        #         symbol=SOL_SYMBOL,
+        #         market_id=MARKET_ID_SOL,
+        #         timeframe='1h'
+        #     )
 
-            # SHIB 보유 시 다른 전략은 실행하지 않음
-            time.sleep(30)
-            continue
+        #     # SHIB 보유 시 다른 전략은 실행하지 않음
+        #     time.sleep(30)
+        #     continue
 
         # -------------------------------------------------
         # SHIB 미보유 시 기존 전략들 실행
@@ -8555,24 +8291,24 @@ while True:
         # -------------------------------------------------
         # ADA 보유 시 ADA 전략만 실행 (다른 전략 스킵)
         # -------------------------------------------------
-        if ada_position != 0:
-            # ADA 보유 중 → ADA 전략만 구동
-            if ada_position > 0:
-                # ADA 롱 → SOL 롱 진입
-                trade_ada_volume_spike_sol(
-                    symbol=SOL_SYMBOL,
-                    market_id=MARKET_ID_SOL,
-                    timeframe='5m',
-                    side='long'
-                )
-            else:
-                # ADA 숏 → SOL 숏 진입
-                trade_ada_volume_spike_sol(
-                    symbol=SOL_SYMBOL,
-                    market_id=MARKET_ID_SOL,
-                    timeframe='5m',
-                    side='short'
-                )
+        # if ada_position != 0:
+        #     # ADA 보유 중 → ADA 전략만 구동
+        #     if ada_position > 0:
+        #         # ADA 롱 → SOL 롱 진입
+        #         trade_ada_volume_spike_sol(
+        #             symbol=SOL_SYMBOL,
+        #             market_id=MARKET_ID_SOL,
+        #             timeframe='5m',
+        #             side='long'
+        #         )
+        #     else:
+        #         # ADA 숏 → SOL 숏 진입
+        #         trade_ada_volume_spike_sol(
+        #             symbol=SOL_SYMBOL,
+        #             market_id=MARKET_ID_SOL,
+        #             timeframe='5m',
+        #             side='short'
+        #         )
 
         # -------------------------------------------------
         # LINK 또는 ADA 보유 시:
@@ -8594,7 +8330,7 @@ while True:
         #
         # 아래의 50MA, ETH 이평선, 일반 RSI, XRP 전략 등은 중지
         # -------------------------------------------------
-        if link_position != 0 or ada_position != 0:
+        if link_position != 0: # or ada_position != 0:
 
             # close 기준 RSI 다이버전스 전략 - 롱+숏 (SOL 1 시간봉)
             # rsi_raise_pct, rsi_drop_pct, price_diff_pct 모두 숫자 직접 입력
@@ -8643,7 +8379,7 @@ while True:
             # LINK 또는 ADA 보유 시:
             # LINK/ADA 연동 전략 및 close RSI 전략만 반복 실행
             # 현재봉 기준 LINK 꼬리 전략도 포함되어 있으므로 5초 간격 사용
-            time.sleep(6)
+            time.sleep(5)
             continue
 
         # -------------------------------------------------
@@ -8802,27 +8538,27 @@ while True:
                 min_volatility=0.0015
             )
 
-            # 50ma 단타왕 전략 SOL 
-            # 15m 50MA 전략
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='15m'
-            )
+            # # 50ma 단타왕 전략 SOL 
+            # # 15m 50MA 전략
+            # trade_50ma_close_strategy(
+            #     symbol=SOL_SYMBOL,
+            #     market_id=MARKET_ID_SOL,
+            #     timeframe='15m'
+            # )
 
-            # 5m 50MA 전략은 보류. 노이즈가 너무 많음 → 0.85% 빠지면 진입하도록 수정
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='5m'
-            )
+            # # 5m 50MA 전략은 보류. 노이즈가 너무 많음 → 0.85% 빠지면 진입하도록 수정
+            # trade_50ma_close_strategy(
+            #     symbol=SOL_SYMBOL,
+            #     market_id=MARKET_ID_SOL,
+            #     timeframe='5m'
+            # )
 
-            # 1h 20/25MA 돌파 전략 (같은 함수로 처리)
-            trade_50ma_close_strategy(
-                symbol=SOL_SYMBOL,
-                market_id=MARKET_ID_SOL,
-                timeframe='1h'
-            )
+            # # 1h 20/25MA 돌파 전략 (같은 함수로 처리)
+            # trade_50ma_close_strategy(
+            #     symbol=SOL_SYMBOL,
+            #     market_id=MARKET_ID_SOL,
+            #     timeframe='1h'
+            # )
 
 
         time.sleep(1) # 아래 전략들은 느긋하게 거래되어도 괜찮지 그래봤자 5~7초 차이
@@ -8975,7 +8711,7 @@ while True:
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
-        time.sleep(10)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
+        time.sleep(6)  # 30 초 간격 AWS 시작 쿨타임3초. 58초에 nohup 엔터 누르면 01초 부터 30초 주기로 돌아감 -> 포지션 보유하고 파니깐 시간 다 뒤틀림.
 
     except Exception as e:
         print(f"[MAIN ERROR] {e}")
