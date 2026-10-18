@@ -344,7 +344,17 @@ def manage_doge_based_sol_exit():
     doge_position = get_position_amount(
         DOGE_SYMBOL
     )
-
+    # 아래 로그만 추가
+    print(
+        f"[DOGE-SOL SL] "
+        f"SOL심볼={SOL_SYMBOL!r} | "
+        f"SOL={sol_position!r} "
+        f"({type(sol_position).__name__}) | "
+        f"DOGE심볼={DOGE_SYMBOL!r} | "
+        f"DOGE={doge_position!r} "
+        f"({type(doge_position).__name__})",
+        flush=True
+    )
     # =================================================
     # SOL 포지션이 없으면 DOGE도 청산
     # =================================================
@@ -1790,46 +1800,46 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
         print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 "
               f"| CME={cme_price:.2f}, prev_close={prev_close:.2f}")
 
-    # MA18 추세 필터
-    trend = ma18_4day_change_trend()
-    vol_trend = ma18_6day_volatility_trend()
+    # # MA18 추세 필터
+    # trend = ma18_4day_change_trend()
+    # vol_trend = ma18_6day_volatility_trend()
 
-    if trend is None or vol_trend is None:
-        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
-        return
+    # if trend is None or vol_trend is None:
+    #     print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
+    #     return
 
-    # 업비트 SOL 일봉 시가와 MA18/MA43 비교값 계산
-    upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
-    yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
-    upbit_today_open = get_upbit_today_open()
-    upbit_yesterday_open = get_upbit_yesterday_open()
+    # # 업비트 SOL 일봉 시가와 MA18/MA43 비교값 계산
+    # upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
+    # yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
+    # upbit_today_open = get_upbit_today_open()
+    # upbit_yesterday_open = get_upbit_yesterday_open()
 
-    # 어제 시가가 둘 다 위에 있었는지
-    yesterday_above_both = (
-        upbit_yesterday_open > yesterday_ma18 and
-        upbit_yesterday_open > yesterday_ma43
-    )
+    # # 어제 시가가 둘 다 위에 있었는지
+    # yesterday_above_both = (
+    #     upbit_yesterday_open > yesterday_ma18 and
+    #     upbit_yesterday_open > yesterday_ma43
+    # )
 
-    # 어제 시가가 둘 다 아래에 있었는지
-    yesterday_below_both = (
-        upbit_yesterday_open < yesterday_ma18 and
-        upbit_yesterday_open < yesterday_ma43
-    )
+    # # 어제 시가가 둘 다 아래에 있었는지
+    # yesterday_below_both = (
+    #     upbit_yesterday_open < yesterday_ma18 and
+    #     upbit_yesterday_open < yesterday_ma43
+    # )
 
-    # 오늘 시가가 둘 다 위로 돌파했는지
-    today_above_both = (
-        upbit_today_open > upbit_ma18 and
-        upbit_today_open > upbit_ma43
-    )
+    # # 오늘 시가가 둘 다 위로 돌파했는지
+    # today_above_both = (
+    #     upbit_today_open > upbit_ma18 and
+    #     upbit_today_open > upbit_ma43
+    # )
 
-    # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
-    today_below_either = (
-        upbit_today_open < upbit_ma18 or
-        upbit_today_open < upbit_ma43
-    )
+    # # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
+    # today_below_either = (
+    #     upbit_today_open < upbit_ma18 or
+    #     upbit_today_open < upbit_ma43
+    # )
 
-    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
-    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
+    # print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
+    # print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
     # 손절 주문 0.65%
     sl_pct = 0.0065
@@ -1840,17 +1850,17 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             print(f"[{symbol} {timeframe}] range_volatility {bull['range_volatility']*100:.2f}% 로 1% 미만이라 롱 진입 금지")
             return
 
-        if yesterday_above_both and today_below_either:
-            print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
-            return
+        # if yesterday_above_both and today_below_either:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 위 → 오늘 MA 아래 전환으로 롱 진입 금지")
+        #     return
 
-        if trend["down_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
-            return
+        # if trend["down_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 하락으로 롱 진입 금지")
+        #     return
 
-        if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
-            return
+        # if vol_trend["all_down_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 하락 + 고변동 5 일이상으로 롱 진입 금지")
+        #     return
 
         tp_pct = tp_long_pct_2 if bull["range_volatility"] > 0.02 else tp_long_pct
         tp_price = bull["prev_close"] * (1 + tp_pct)
@@ -1908,17 +1918,17 @@ def trade_rsi_strategy(symbol, market_id, timeframe, tp_long_pct, tp_long_pct_2,
             print(f"[{symbol} {timeframe}] range_volatility {bear['range_volatility']*100:.2f}% 로 1% 미만이라 숏 진입 금지")
             return
 
-        if yesterday_below_both and today_above_both:
-            print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 돌파로 숏 진입 금지")
-            return
+        # if yesterday_below_both and today_above_both:
+        #     print(f"[{symbol} {timeframe}] 어제 MA 아래 → 오늘 MA 위 돌파로 숏 진입 금지")
+        #     return
 
-        if trend["up_3days"]:
-            print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
-            return
+        # if trend["up_3days"]:
+        #     print(f"[{symbol} {timeframe}] MA18 3 일 연속 상승으로 숏 진입 금지")
+        #     return
 
-        if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
-            print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
-            return
+        # if vol_trend["all_up_6days"] and vol_trend["high_vol_days"] >= 5:
+        #     print(f"[{symbol} {timeframe}] MA18 6 일 연속 상승 + 고변동 5 일이상으로 숏 진입 금지")
+        #     return
 
         tp_pct = tp_short_pct_2 if bear["range_volatility"] > 0.02 else tp_short_pct
         tp_price = bear["prev_close"] * (1 - tp_pct)
@@ -2351,7 +2361,7 @@ def analyze_bullish_divergence_close(
     # range_volatility가 구간 변동성 0.85% 이상
     cond_range_volatility_15_2 = (
         range_volatility_15
-        >= 0.085
+        >= 0.0085
     )
 
     # -------------------------------------------------
@@ -3012,6 +3022,29 @@ def trade_rsi_close_strategy(
     print(f"[{symbol} {timeframe}] BULL_CLOSE={bull_close}")
     print(f"[{symbol} {timeframe}] BEAR_CLOSE={bear_close}")
 
+    # =============================================
+    # 추가: 롱·숏 신호가 모두 없으면 즉시 종료
+    # 불필요한 CME / MA18 / 업비트 조회 생략
+    # =============================================
+    has_long_signal = (
+        bull_close is not None
+        and bool(bull_close["signal"])
+    )
+
+    has_short_signal = (
+        bear_close is not None
+        and bool(bear_close["signal"])
+    )
+
+    if not (has_long_signal or has_short_signal):
+        print(
+            f"[{symbol} {timeframe}] "
+            "롱·숏 신호 없음 → 추가 조회 생략",
+            flush=True
+        )
+        return
+    # 추가: 롱·숏 신호가 모두 없으면 즉시 종료
+    
     # CME 편차 조건은 신호가 있을 때만 확인
     if (bull_close and bull_close["signal"]) or (bear_close and bear_close["signal"]):
         try:
@@ -3033,29 +3066,29 @@ def trade_rsi_close_strategy(
         print(f"[{symbol} {timeframe}] CME 편차 {deviation*100:.2f}% 충족 | CME={cme_price:.2f}, prev_close={prev_close:.2f}")
 
     # MA18 추세 필터
-    trend = ma18_4day_change_trend()
-    vol_trend = ma18_6day_volatility_trend()
+    # trend = ma18_4day_change_trend()
+    # vol_trend = ma18_6day_volatility_trend()
 
-    if trend is None or vol_trend is None:
-        print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
-        return
+    # if trend is None or vol_trend is None:
+    #     print(f"[{symbol} {timeframe}] MA18 추세 데이터를 가져오지 못해 중단")
+    #     return
 
-    # 업비트 일봉 시가와 MA18/MA43 비교값 계산
-    upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
-    yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
-    upbit_today_open = get_upbit_today_open()
-    upbit_yesterday_open = get_upbit_yesterday_open()
+    # # 업비트 일봉 시가와 MA18/MA43 비교값 계산
+    # upbit_ma18, upbit_ma43 = get_upbit_ma18_ma43()
+    # yesterday_ma18, yesterday_ma43 = get_upbit_yesterday_ma18_ma43()
+    # upbit_today_open = get_upbit_today_open()
+    # upbit_yesterday_open = get_upbit_yesterday_open()
     # 어제 시가가 둘 다 위에 있었는지
-    yesterday_above_both = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
-    # 어제 시가가 둘 다 아래에 있었는지
-    yesterday_below_both = upbit_yesterday_open < yesterday_ma18 and upbit_yesterday_open < yesterday_ma43
-    # 오늘 시가가 둘 다 위로 돌파했는지
-    today_above_both = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
-    # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
-    today_below_either = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
+    # yesterday_above_both = upbit_yesterday_open > yesterday_ma18 and upbit_yesterday_open > yesterday_ma43
+    # # 어제 시가가 둘 다 아래에 있었는지
+    # yesterday_below_both = upbit_yesterday_open < yesterday_ma18 and upbit_yesterday_open < yesterday_ma43
+    # # 오늘 시가가 둘 다 위로 돌파했는지
+    # today_above_both = upbit_today_open > upbit_ma18 and upbit_today_open > upbit_ma43
+    # # 오늘 시가가 둘 중 하나라도 아래로 깨졌는지
+    # today_below_either = upbit_today_open < upbit_ma18 or upbit_today_open < upbit_ma43
 
-    print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
-    print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
+    # print(f"[{symbol} {timeframe}] TREND4={trend['changes']}, up={trend['up_3days']}, down={trend['down_3days']}")
+    # print(f"[{symbol} {timeframe}] TREND6 all_up={vol_trend['all_up_6days']}, all_down={vol_trend['all_down_6days']}, high_vol={vol_trend['high_vol_days']}")
 
     sl_pct = 0.006
 
@@ -8220,6 +8253,79 @@ def trade_link_tail_strategy(
             f"base={tail_signal['base_candle_name']}"
         )
 
+# 로그확인용 
+import functools
+def trace_elapsed(func):
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs):
+        started = time.perf_counter()
+
+        symbol = kwargs.get("symbol", "")
+        timeframe = kwargs.get("timeframe", "")
+        side = kwargs.get("side", "")
+
+        detail = " ".join(
+            str(value)
+            for value in (symbol, timeframe, side)
+            if value
+        )
+
+        label = f"{func.__name__} {detail}".strip()
+
+        print(
+            f"[시간측정 시작] {label}",
+            flush=True
+        )
+
+        try:
+            return func(*args, **kwargs)
+
+        finally:
+            elapsed = time.perf_counter() - started
+
+            print(
+                f"[시간측정 종료] {label} | "
+                f"{elapsed:.3f}초",
+                flush=True
+            )
+
+    return wrapped
+
+
+# 로그 확인용
+# # while True 내부에 넣지 마세요.
+# _functions_to_trace = [
+#     "manage_doge_based_sol_exit",
+#     "manage_eth_based_sol_exit",
+#     "get_position_amount",
+#     "has_position",
+#     "set_margin_and_leverage",
+#     "get_available_usdt",
+#     "trade_link_tail_strategy",
+#     "trade_rsi_close_strategy",
+#     "trade_rsi_close_strategy_eth_long_new",
+#     "trade_rsi_strategy",
+#     "trade_rsi_close_strategy_xrp_sol",
+    
+#     # 추가
+#     "get_confirmed_candles_with_rsi",
+#     "analyze_bullish_divergence_close",
+#     "analyze_bearish_divergence_close",
+#     "get_last_saturday_6_close",
+#     "ma18_4day_change_trend",
+#     "ma18_6day_volatility_trend",
+#     "get_upbit_ma18_ma43",
+#     "get_upbit_yesterday_ma18_ma43",
+#     "get_upbit_today_open",
+#     "get_upbit_yesterday_open",    
+# ]
+
+# for _name in _functions_to_trace:
+#     _func = globals().get(_name)
+
+#     if callable(_func):
+#         globals()[_name] = trace_elapsed(_func)
+# # 로그확인용 
 
     
 # -------------------- 전역 변수 및 메인 루프 --------------------
@@ -8287,7 +8393,32 @@ last_link_tail_short_15m = 0
 last_link_tail_long_1h = 0
 last_link_tail_short_1h = 0
 
+previous_loop_started = None
+loop_count = 0
 
+# 로그확인용
+# while True:
+#     try:
+#         loop_started = time.perf_counter()
+#         loop_count += 1
+
+#         if previous_loop_started is not None:
+#             print(
+#                 f"[MAIN LOOP #{loop_count}] "
+#                 "이전 회차 시작 이후 "
+#                 f"{loop_started - previous_loop_started:.3f}초",
+#                 flush=True
+#             )
+#         else:
+#             print(
+#                 f"[MAIN LOOP #{loop_count}] 첫 실행",
+#                 flush=True
+#             )
+
+#         previous_loop_started = loop_started
+
+#         now = now_kst()
+# 로그확인용        
 
 while True:
     try:
@@ -8299,14 +8430,12 @@ while True:
         manage_doge_based_sol_exit()
         time.sleep(0.5)
 
-
         # =================================================
         # ETH 포지션 기준 SOL 청산 감시
         # =================================================
         # ETH 롱 + SOL 롱:
         # - 최근 5개 확정 15m 봉 최저 low 이하 시 SOL 청산
         # - ma7 조건 충족 시 SOL 청산
-        #
         # ETH 숏 + SOL 숏:
         # - 최근 5개 확정 15m 봉 최고 high 이상 시 SOL 청산
         # - ma7 조건 충족 시 SOL 청산
@@ -8345,8 +8474,8 @@ while True:
         # LINK 현재 포지션 확인
         link_position = get_position_amount('LINK/USDT')
 
-        # ADA 현재 포지션 확인
-        ada_position = get_position_amount('ADA/USDT')
+        # # ADA 현재 포지션 확인
+        # ada_position = get_position_amount('ADA/USDT')
 
         # -------------------------------------------------
         # LINK 롱 보유 시 → SOL 롱 꼬리 전략
@@ -8623,26 +8752,26 @@ while True:
 
 
 # 이평선 매물대 전략, eth는 추가매수용 없어도 매수는 됨
-        sol_position = get_position_amount('SOL/USDT')
+        # sol_position = get_position_amount('SOL/USDT')
 
-        if sol_position == 0: # 이렇게 되어 있으면 추매는 안되겠다. 얘는 추매용으로 쓰지말자 그냥,,
-            trade_rsi_close_strategy_eth_long_new(
-                symbol='SOL/USDT',
-                market_id='SOLUSDT',
-                timeframe='1h',
-                tp_long_pct=0.011,
-                tp_long_pct_2=0.011,
-                min_volatility=0.0015
-            )
+        # if sol_position == 0: # 이렇게 되어 있으면 추매는 안되겠다. 얘는 추매용으로 쓰지말자 그냥,,
+        #     trade_rsi_close_strategy_eth_long_new(
+        #         symbol='SOL/USDT',
+        #         market_id='SOLUSDT',
+        #         timeframe='1h',
+        #         tp_long_pct=0.011,
+        #         tp_long_pct_2=0.011,
+        #         min_volatility=0.0015
+        #     )
 
-            trade_rsi_close_strategy_eth_long_new(
-                symbol='SOL/USDT',
-                market_id='SOLUSDT',
-                timeframe='15m',
-                tp_long_pct=0.011,
-                tp_long_pct_2=0.011,
-                min_volatility=0.0015
-            )
+        #     trade_rsi_close_strategy_eth_long_new(
+        #         symbol='SOL/USDT',
+        #         market_id='SOLUSDT',
+        #         timeframe='15m',
+        #         tp_long_pct=0.011,
+        #         tp_long_pct_2=0.011,
+        #         min_volatility=0.0015
+        #     )
 
             # # 50ma 단타왕 전략 SOL 
             # # 15m 50MA 전략
