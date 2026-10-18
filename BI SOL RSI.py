@@ -7362,7 +7362,7 @@ def analyze_sol_link_tail_signal(
     # 최근 4개 확정봉 방향별 공통 진입 제한
     # 검사 대상: -5, -4, -3, -2  현재 진행봉(-1)은 제외합니다.
     # 숏: +0.3% 이상 양봉 3개 이상 또는 +0.7% 이상 양봉 2개 이상
-    # 롱: -0.3% 이하 음봉 2개 이상
+    # 롱: -0.3% 이하 음봉 1개 이상
     # =============================================
     directional_candles = df.iloc[-5:-1]
 
@@ -7491,6 +7491,112 @@ def analyze_sol_link_tail_signal(
             "special_case_4": False,
             **volatility_debug,
         }
+
+    # =============================================
+    # 최근 4개 확정봉 BB 이탈 공통필터 현재 진행봉(-1)은 제외
+    # 검사 대상:  -5, -4, -3, -2
+    # 롱: low < 해당 봉 당시 bb_lower인 봉 2개 이상
+    # 숏: high > 해당 봉 당시 bb_upper인 봉 2개 이상
+    # =============================================
+    last_5_bb_candles = df.iloc[-5:-1] # 5로하면 4개
+
+    if side == "long":
+        bb_test_prices = (
+            last_5_bb_candles["low"].astype(float)
+        )
+        bb_band_values = (
+            last_5_bb_candles["bb_lower"].astype(float)
+        )
+        bb_break_description = "저가 < 해당 봉 BB 하단"
+
+    else:
+        bb_test_prices = (
+            last_5_bb_candles["high"].astype(float)
+        )
+        bb_band_values = (
+            last_5_bb_candles["bb_upper"].astype(float)
+        )
+        bb_break_description = "고가 > 해당 봉 BB 상단"
+
+    # 가격 / BB 값이 유효하지 않으면 진입 차단
+    valid_bb_data = (
+        bb_test_prices.gt(0)
+        & bb_test_prices.lt(float("inf"))
+        & bb_band_values.gt(0)
+        & bb_band_values.lt(float("inf"))
+    )
+
+    if not bool(valid_bb_data.all()):
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": "최근 5봉 BB 이탈 검사 데이터 오류",
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            "special_case_5": False,
+            "special_case_6": False,
+            **volatility_debug,
+        }
+
+    # 각 봉의 가격과 같은 행의 BB 값을 비교
+    if side == "long":
+        bb_break_mask = (
+            bb_test_prices < bb_band_values
+        )
+    else:
+        bb_break_mask = (
+            bb_test_prices > bb_band_values
+        )
+
+    last_5_bb_break_count = int(
+        bb_break_mask.sum()
+    )
+
+    cond_last_5_bb_break = (
+        last_5_bb_break_count >= 2
+    )
+
+    # 이후 전략 반환 결과에도 함께 기록
+    volatility_debug.update({
+        "last_5_bb_break_count": last_5_bb_break_count,
+        "last_5_bb_break_required_count": 2,
+        "last_5_bb_break_condition": bool(
+            cond_last_5_bb_break
+        ),
+        "last_5_bb_break_mask": [
+            bool(value)
+            for value in bb_break_mask.tolist()
+        ],
+        "last_5_bb_break_description": (
+            bb_break_description
+        ),
+    })
+
+    # 2개 미만이면 아래의 모든 전략 진입 차단
+    if not cond_last_5_bb_break:
+        return {
+            "signal": False,
+            "side": side,
+            "signal_type": "none",
+            "reason": (
+                f"최근 5개 확정봉 BB 이탈 "
+                f"{last_5_bb_break_count}개로 2개 미만 | "
+                f"조건: {bb_break_description}"
+            ),
+            "current_price": current_price,
+            "special_case": False,
+            "special_case_2": False,
+            "special_case_3": False,
+            "special_case_4": False,
+            "special_case_5": False,
+            "special_case_6": False,
+            **volatility_debug,
+        }
+
 
     # =============================================
     # 스페셜3
