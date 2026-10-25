@@ -2496,12 +2496,18 @@ def analyze_bullish_divergence_close(
     )
 
     # RSI 조건:
-    # 직전봉 RSI가 30 봉 기준 음봉 최저 RSI보다
-    # 지정 비율 이상 높아야 함
+    # 직전봉 RSI가 30 봉 기준 음봉 최저 RSI보다 지정 비율 이상 높아야 함
+    # 최근 7봉 변동성이 1.5% 초과인 경우: RSI 조건을 완화하여 최저 RSI의 98% 이상이면 통과
+    # 그 외 평소: 최저 RSI의 101% 이상이어야 통과
+    if range_volatility_7 > 0.015:  
+        rsi_30_multiplier = 0.98
+    else:
+        rsi_30_multiplier = 1.01
+
     cond_rsi_30 = (
         prev_candle['rsi']
         >= lowest_rsi_30
-        * (0.98)  #2% 낮은데도 들어가네?
+        * rsi_30_multiplier
     )
 
     # 직전봉 몸통 변동성 조건
@@ -2522,7 +2528,7 @@ def analyze_bullish_divergence_close(
         and cond_rsi_30
         and cond_volatility_30
         and cond_bearish_candle
-        # and cond_range_volatility_7
+        and cond_range_volatility_7
         # and cond_bollinger_filter 30봉은 볼린저 조건 제외
     )
 
@@ -6943,10 +6949,10 @@ def analyze_sol_link_special6(
         else get_short_upper_tail_info
     )
 
-    selected = None
+    candidates = []
 
     # =============================================
-    # 1. 가장 최신 기준봉 선택
+    # 1. 기준봉 후보 탐색
     # 직1전 → 직8전 순서
     # =============================================
     for bars_ago in range(1, 9):
@@ -6970,9 +6976,6 @@ def analyze_sol_link_special6(
         # 조건 1: 방향 / 몸통 / 꼬리
         # 롱: 음봉 + 아래꼬리
         # 숏: 양봉 + 윗꼬리
-        # 몸통 변동성 >= 0.2%
-        # 꼬리 / 몸통 >= 1/2
-        # 꼬리 길이 > 기준봉 종가 × 0.002
         # -----------------------------------------
         if side == "long":
             direction_condition = c < o
@@ -6992,32 +6995,32 @@ def analyze_sol_link_special6(
             continue
 
         # -----------------------------------------
-        # 조건 2-A: 기준봉 자체의 BB 이탈 기준봉 당시 BB 값을 사용
-        # 롱: 기준봉 low < 기준봉 BB 하단
-        # 숏: 기준봉 high > 기준봉 BB 상단
+        # 조건 2-A: 기준봉 자체의 BB 이탈
         # -----------------------------------------
         if side == "long":
-            base_bb_value = float(candle["bb_lower"])
+            base_bb_value = float(
+                candle["bb_lower"]
+            )
 
             base_bb_break_condition = (
                 l < base_bb_value
             )
         else:
-            base_bb_value = float(candle["bb_upper"])
+            base_bb_value = float(
+                candle["bb_upper"]
+            )
 
             base_bb_break_condition = (
                 h > base_bb_value
             )
 
-        if not (0 < base_bb_value < float("inf")):
+        if not (
+            0 < base_bb_value < float("inf")
+        ):
             continue
 
         # -----------------------------------------
         # 조건 2-B: 직전 확정봉 BB와 기준봉 가격 비교
-        # 롱:
-        # 직전봉 BB 상단 > 기준봉 high × 1.0015
-        # 숏:
-        # 직전봉 BB 하단 < 기준봉 low × 0.9985
         # -----------------------------------------
         if side == "long":
             prev_bb_condition = (
@@ -7036,9 +7039,8 @@ def analyze_sol_link_special6(
         if not bb_condition:
             continue
 
-        # 모든 기준봉 자체 조건을 만족한
-        # 가장 최신 봉을 선택하고 검색 종료
-        selected = {
+        # 기준봉 자체 조건을 통과한 후보를 모두 저장
+        candidates.append({
             "bars_ago": bars_ago,
             "position": position,
             "candle": candle,
@@ -7051,125 +7053,172 @@ def analyze_sol_link_special6(
                 base_bb_break_condition
             ),
             "prev_bb_condition": prev_bb_condition,
-        }
-        break
+        })
 
-    if selected is None:
+    # 기준봉 후보가 없으면 종료
+    if not candidates:
         return None
 
     # =============================================
-    # 2. 선택한 최신 기준봉만 사용
-    # 이후 조건이 실패해도 이전 기준봉으로 돌아가지 않음
-    # =============================================
-    candle = selected["candle"]
-    info = selected["info"]
-    bars_ago = selected["bars_ago"]
-    position = selected["position"]
-
-    base_high = selected["high"]
-    base_low = selected["low"]
-
-    # 기준봉 다음부터 직전 확정봉까지.
-    # 기준봉 자체와 현재 진행봉은 제외.
-    between = df.iloc[position + 1:-1]
-
-    # =============================================
-    # 3. 기준봉 이후 확정봉의 가격 유지 조건
-    # 롱: 모든 low > 기준봉 low × 1.0005
-    # 숏: 모든 high < 기준봉 high × 0.9995
+    # 2. 유리한 기준봉 우선 정렬
+    # 롱: low가 가장 낮은 봉 우선
+    # 숏: high가 가장 높은 봉 우선
     # =============================================
     if side == "long":
-        hold_threshold = base_low * 1.0005
-        between_prices = between["low"].astype(float)
-    else:
-        hold_threshold = base_high * 0.9995
-        between_prices = between["high"].astype(float)
-
-    valid_between = (
-        between_prices.gt(0)
-        & between_prices.lt(float("inf"))
-    )
-
-    if not bool(valid_between.all()):
-        return None
-
-    if side == "long":
-        hold_condition = bool(
-            (between_prices > hold_threshold).all()
+        candidates.sort(
+            key=lambda item: item["low"]
         )
     else:
-        hold_condition = bool(
-            (between_prices < hold_threshold).all()
+        candidates.sort(
+            key=lambda item: item["high"],
+            reverse=True
         )
 
-    if not hold_condition:
-        return None
-
     # =============================================
-    # 4. 현재가 진입 조건
-    # 롱: 현재가 < 기준봉 low × 0.9995
-    # 숏: 현재가 > 기준봉 high × 1.0005
+    # 3. 후보별 중간 봉 유지 / 진입 트리거 검사
     # =============================================
-    if side == "long":
-        entry_reference = base_low
-        trigger = base_low * 0.9995
-        price_condition = current_price < trigger
-    else:
-        entry_reference = base_high
-        trigger = base_high * 1.0005
-        price_condition = current_price > trigger
+    for selected in candidates:
 
-    if not price_condition:
-        return None
+        candle = selected["candle"]
+        info = selected["info"]
+        bars_ago = selected["bars_ago"]
+        position = selected["position"]
 
-    # =============================================
-    # 5. 스페셜6 신호 반환
-    # =============================================
-    result = _link_tail_signal_result(
-        side=side,
-        signal_type="special6",
-        candle=candle,
-        candle_name=f"prev{bars_ago}",
-        current_price=current_price,
-        tail_info=info,
-        entry_reference=entry_reference,
-        entry_trigger=trigger,
-        price_condition=True,
-    )
+        base_high = selected["high"]
+        base_low = selected["low"]
 
-    result.update({
-        "special_case_6": True,
-        "reason": (
-            f"{side} 스페셜6 최신 기준봉 진입 | "
-            f"기준=직{bars_ago}전봉 | "
-            f"진입기준가={trigger:.6f}"
-        ),
-        "special6_bars_ago": bars_ago,
-        "special6_tail_length": float(
-            selected["tail_length"]
-        ),
+        # 기준봉 다음부터 직전 확정봉까지
+        between = df.iloc[position + 1:-1]
 
-        "special6_bb_condition": True,
-        "special6_base_bb_value": float(
-            selected["base_bb_value"]
-        ),
-        "special6_base_bb_break_condition": bool(
-            selected["base_bb_break_condition"]
-        ),
-        "special6_prev_bb_condition": bool(
-            selected["prev_bb_condition"]
-        ),
-        "special6_prev_bb_upper": prev_bb_upper,
-        "special6_prev_bb_lower": prev_bb_lower,
+        # -----------------------------------------
+        # 기준봉 이후 확정봉의 가격 유지 조건 - 중간에 기준봉을 이탈하는 low, high 가 발생하면 안됨
+        # -----------------------------------------
+        if side == "long":
+            hold_threshold = (
+                base_low * 1.0005
+            )
+            between_prices = (
+                between["low"].astype(float)
+            )
+        else:
+            hold_threshold = (
+                base_high * 0.9995
+            )
+            between_prices = (
+                between["high"].astype(float)
+            )
 
-        "special6_hold_threshold": float(
-            hold_threshold
-        ),
-        "special6_hold_condition": True,
-        "special6_between_count": len(between),
-    })
+        valid_between = (
+            between_prices.gt(0)
+            & between_prices.lt(float("inf"))
+        )
 
-    return result
+        if not bool(valid_between.all()):
+            continue
+
+        if side == "long":
+            hold_condition = bool(
+                (
+                    between_prices
+                    > hold_threshold
+                ).all()
+            )
+        else:
+            hold_condition = bool(
+                (
+                    between_prices
+                    < hold_threshold
+                ).all()
+            )
+
+        if not hold_condition:
+            continue
+
+        # -----------------------------------------
+        # 현재가 진입 조건 -기준봉 low보다 0.1% 낮은 가격에 진입
+        # -----------------------------------------
+        if side == "long":
+            entry_reference = base_low
+            trigger = (
+                base_low * 0.999
+            )
+            price_condition = (
+                current_price < trigger
+            )
+        else:
+            entry_reference = base_high
+            trigger = (
+                base_high * 1.001
+            )
+            price_condition = (
+                current_price > trigger
+            )
+
+        if not price_condition:
+            continue
+
+        # =============================================
+        # 4. 스페셜6 신호 반환
+        # =============================================
+        result = _link_tail_signal_result(
+            side=side,
+            signal_type="special6",
+            candle=candle,
+            candle_name=f"prev{bars_ago}",
+            current_price=current_price,
+            tail_info=info,
+            entry_reference=entry_reference,
+            entry_trigger=trigger,
+            price_condition=True,
+        )
+
+        result.update({
+            "special_case_6": True,
+            "reason": (
+                f"{side} 스페셜6 최적 기준봉 진입 | "
+                f"기준=직{bars_ago}전봉 | "
+                f"진입기준가={trigger:.6f}"
+            ),
+            "special6_bars_ago": bars_ago,
+            "special6_tail_length": float(
+                selected["tail_length"]
+            ),
+
+            "special6_bb_condition": True,
+            "special6_base_bb_value": float(
+                selected["base_bb_value"]
+            ),
+            "special6_base_bb_break_condition": bool(
+                selected[
+                    "base_bb_break_condition"
+                ]
+            ),
+            "special6_prev_bb_condition": bool(
+                selected["prev_bb_condition"]
+            ),
+            "special6_prev_bb_upper": prev_bb_upper,
+            "special6_prev_bb_lower": prev_bb_lower,
+
+            "special6_hold_threshold": float(
+                hold_threshold
+            ),
+            "special6_hold_condition": True,
+            "special6_between_count": len(
+                between
+            ),
+            "special6_candidate_count": len(
+                candidates
+            ),
+            "special6_selection_rule": (
+                "lowest_low"
+                if side == "long"
+                else "highest_high"
+            ),
+        })
+
+        return result
+
+    return None
 
 def analyze_sol_link_special7(
     df,
@@ -7182,20 +7231,17 @@ def analyze_sol_link_special7(
     공통 캔들 필터를 적용하지 않습니다.
 
     롱:
-    - 직전 3개 확정봉 중 몸통 변동성 0.18% 미만 닷지
-    - 아래꼬리 >= 종가 * 0.4%
-    - 진입 트리거 = 닷지 low * 1.0015
+    - 직전 3개 확정봉 중 몸통 변동성 0.15% 미만 닷지
+    - 아래꼬리 >= 종가 * 0.35%
+    - 진입 트리거 = 닷지 low * 1.001
     - 익절 = 닷지 이전 4개 봉 시가 중 최대값
 
     숏:
-    - 직전 3개 확정봉 중 몸통 변동성 0.18% 미만 닷지
-    - 위꼬리 >= 종가 * 0.4%
-    - 진입 트리거 = 닷지 high * 0.9985
+    - 직전 3개 확정봉 중 몸통 변동성 0.15% 미만 닷지
+    - 위꼬리 >= 종가 * 0.35%
+    - 진입 트리거 = 닷지 high * 0.999
     - 익절 = 닷지 이전 4개 봉 시가 중 최소값
     """
-
-    if df is None or len(df) < 8:
-        return None
 
     if df is None or len(df) < 8:
         return None
@@ -7252,6 +7298,118 @@ def analyze_sol_link_special7(
     if special7_bb_break_count < 2:
         return None
 
+    # =============================================
+    # 스페셜7 전용 최근 6봉 방향성 제약
+    # 롱: 직전 6개 확정봉 중 -0.47% 이하 하락봉 1개 이상
+    # 숏: 직전 6개 확정봉 중 +0.47% 이상 상승봉 1개 이상
+    # =============================================
+    last_6_candles = df.iloc[-7:-1]
+
+    last_6_opens = (
+        last_6_candles["open"].astype(float)
+    )
+    last_6_closes = (
+        last_6_candles["close"].astype(float)
+    )
+
+    valid_last_6_prices = (
+        last_6_opens.gt(0)
+        & last_6_opens.lt(float("inf"))
+        & last_6_closes.gt(0)
+        & last_6_closes.lt(float("inf"))
+    )
+
+    if not bool(valid_last_6_prices.all()):
+        return None
+
+    last_6_returns = (
+        (last_6_closes - last_6_opens)
+        / last_6_opens
+    )
+
+    if side == "long":
+        directional_047_count = int(
+            (last_6_returns <= -0.0047).sum()
+        )
+        directional_047_condition = (
+            directional_047_count >= 1
+        )
+        directional_047_description = (
+            "직전 6개 확정봉 중 "
+            "-0.47% 이하 하락봉 1개 이상"
+        )
+    else:
+        directional_047_count = int(
+            (last_6_returns >= 0.0047).sum()
+        )
+        directional_047_condition = (
+            directional_047_count >= 1
+        )
+        directional_047_description = (
+            "직전 6개 확정봉 중 "
+            "+0.47% 이상 상승봉 1개 이상"
+        )
+
+    # 6봉 방향성 제약 미충족 시 스페셜7 진입 금지
+    if not directional_047_condition:
+        return None
+
+    # =============================================
+    # 스페셜7 전용 최근 4봉 방향성 제약
+    # 롱: 직전 4개 확정봉 중 -0.3% 이하 음봉 1개 이상
+    # 숏: 직전 4개 확정봉 중 +0.3% 이상 양봉 1개 이상
+    # =============================================
+    last_4_candles = df.iloc[-5:-1]
+
+    last_4_opens = (
+        last_4_candles["open"].astype(float)
+    )
+    last_4_closes = (
+        last_4_candles["close"].astype(float)
+    )
+
+    valid_last_4_prices = (
+        last_4_opens.gt(0)
+        & last_4_opens.lt(float("inf"))
+        & last_4_closes.gt(0)
+        & last_4_closes.lt(float("inf"))
+    )
+
+    if not bool(valid_last_4_prices.all()):
+        return None
+
+    last_4_returns = (
+        (last_4_closes - last_4_opens)
+        / last_4_opens
+    )
+
+    if side == "long":
+        directional_03_count = int(
+            (last_4_returns <= -0.003).sum()
+        )
+        directional_03_condition = (
+            directional_03_count >= 1
+        )
+        directional_03_description = (
+            "직전 4개 확정봉 중 "
+            "-0.3% 이하 음봉 1개 이상"
+        )
+    else:
+        directional_03_count = int(
+            (last_4_returns >= 0.003).sum()
+        )
+        directional_03_condition = (
+            directional_03_count >= 1
+        )
+        directional_03_description = (
+            "직전 4개 확정봉 중 "
+            "+0.3% 이상 양봉 1개 이상"
+        )
+
+    # 4봉 방향성 제약 미충족 시 스페셜7 진입 금지
+    if not directional_03_condition:
+        return None
+
     recent_3 = df.iloc[-3:]
 
     for candle_name, candle in [
@@ -7273,8 +7431,8 @@ def analyze_sol_link_special7(
             / open_price
         )
 
-        # 닷지 조건: 몸통 변동성 0.18% 미만
-        if body_volatility >= 0.0018:
+        # 닷지 조건: 몸통 변동성 0.15% 미만
+        if body_volatility >= 0.0015:
             continue
 
         candle_position = df.index.get_loc(candle.name)
@@ -7295,12 +7453,12 @@ def analyze_sol_link_special7(
             )
 
             # 아래꼬리 조건
-            if lower_wick < close_price * 0.004:
+            if lower_wick < close_price * 0.0035:
                 continue
 
             entry_reference = low_price
             entry_trigger = (
-                low_price * 1.0015
+                low_price * 1.001
             )
 
             tp_price = float(
@@ -7326,7 +7484,7 @@ def analyze_sol_link_special7(
 
             entry_reference = high_price
             entry_trigger = (
-                high_price * 0.9985
+                high_price * 0.999
             )
 
             tp_price = float(
@@ -7423,6 +7581,32 @@ def analyze_sol_link_special7(
             "special7_price_condition": bool(
                 price_condition
             ),
+            "special7_directional_047_count": int(
+                directional_047_count
+            ),
+            "special7_directional_047_condition": bool(
+                directional_047_condition
+            ),
+            "special7_directional_047_description": (
+                directional_047_description
+            ),
+            "special7_last_6_returns": [
+                float(value)
+                for value in last_6_returns.tolist()
+            ],
+            "special7_directional_03_count": int(
+                directional_03_count
+            ),
+            "special7_directional_03_condition": bool(
+                directional_03_condition
+            ),
+            "special7_directional_03_description": (
+                directional_03_description
+            ),
+            "special7_last_4_returns": [
+                float(value)
+                for value in last_4_returns.tolist()
+            ],            
             "common_candle_filters_applied": False,
             "common_candle_filters_bypassed": True,
         })
