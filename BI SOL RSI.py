@@ -7410,12 +7410,14 @@ def analyze_sol_link_special7(
     if not directional_03_condition:
         return None
 
-    recent_3 = df.iloc[-3:]
+    # =============================================
+    # 닷지 탐색 대상: 직전봉, 직2전봉
+    # =============================================
+    recent_2 = df.iloc[-2:]
 
     for candle_name, candle in [
-        ("prev", recent_3.iloc[-1]),
-        ("prev2", recent_3.iloc[-2]),
-        ("prev3", recent_3.iloc[-3]),
+        ("prev", recent_2.iloc[-1]),
+        ("prev2", recent_2.iloc[-2]),
     ]:
 
         open_price = float(candle["open"])
@@ -7453,7 +7455,7 @@ def analyze_sol_link_special7(
             )
 
             # 아래꼬리 조건
-            if lower_wick < close_price * 0.0035:
+            if lower_wick < close_price * 0.004:
                 continue
 
             entry_reference = low_price
@@ -7615,9 +7617,9 @@ def analyze_sol_link_special7(
         if price_condition:
             return result
 
-        # 닷지는 있지만 가격 미도달이면
-        # 이후 일반 전략 검사로 넘어가지 않음
-        return result
+        # 닷지는 있지만 현재가가 트리거에 미도달이면
+        # 다음 닷지 후보를 검사
+        continue
 
     return None
 
