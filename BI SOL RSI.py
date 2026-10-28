@@ -7413,7 +7413,7 @@ def analyze_sol_link_special7(
     # =============================================
     # 닷지 탐색 대상: 직전봉, 직2전봉
     # =============================================
-    recent_2 = df.iloc[-2:]
+    recent_2 = df.iloc[-3:-1]
 
     for candle_name, candle in [
         ("prev", recent_2.iloc[-1]),
@@ -7443,8 +7443,8 @@ def analyze_sol_link_special7(
         if candle_position < 4:
             continue
 
-        prev_4 = df.iloc[
-            candle_position - 4:candle_position
+        prev_3 = df.iloc[
+            candle_position - 3:candle_position
         ]
 
         if side == "long":
@@ -7464,7 +7464,7 @@ def analyze_sol_link_special7(
             )
 
             tp_price = float(
-                prev_4["open"].max()
+                prev_3["open"].max()
             )
             # 익절가는 진입 트리거보다 위여야 함
             if tp_price <= entry_trigger:
@@ -7490,7 +7490,7 @@ def analyze_sol_link_special7(
             )
 
             tp_price = float(
-                prev_4["open"].min()
+                prev_3["open"].min()
             )
 
             # 익절가는 진입 트리거보다 아래여야 함
@@ -8244,7 +8244,7 @@ def analyze_sol_link_tail_signal(
             prev2_return <= -0.006
             and prev2_body > 0
             and prev2_lower_tail < prev2_body / 5
-            and prev_return >= 0.002
+            and prev_return >= 0.0012
         )
 
         rule1_reason = (
@@ -8260,7 +8260,7 @@ def analyze_sol_link_tail_signal(
             prev2_return >= 0.006
             and prev2_body > 0
             and prev2_upper_tail < prev2_body / 5
-            and prev_return <= -0.002
+            and prev_return <= -0.0012
         )
 
         rule1_reason = (
@@ -8286,7 +8286,7 @@ def analyze_sol_link_tail_signal(
         cond_rule2 = (
             prev_return > 0
             and prev_body > 0
-            and prev_lower_tail < prev_body / 3
+            and prev_lower_tail >= prev_body / 3
         )
 
         rule2_reason = (
@@ -8300,7 +8300,7 @@ def analyze_sol_link_tail_signal(
         cond_rule2 = (
             prev_return < 0
             and prev_body > 0
-            and prev_upper_tail < prev_body / 3
+            and prev_upper_tail >= prev_body / 3
         )
 
         rule2_reason = (
