@@ -7024,11 +7024,11 @@ def analyze_sol_link_special6(
         # -----------------------------------------
         if side == "long":
             prev_bb_condition = (
-                prev_bb_upper > h * 1.0015
+                prev_bb_lower < l * 0.9985
             )
         else:
             prev_bb_condition = (
-                prev_bb_lower < l * 0.9985
+                prev_bb_upper > h * 1.0015
             )
 
         bb_condition = (
