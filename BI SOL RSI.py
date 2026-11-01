@@ -2305,11 +2305,11 @@ def analyze_bullish_divergence_close(
     # -------------------------------------------------
 
     # base_7 음봉 최저 RSI보다
-    # 직전봉 RSI가 9% 이상 높으면 완화
+    # 직전봉 RSI가 15% 이상 높으면 완화
     cond_rsi_15_2_relaxed_9 = (
         prev_candle['rsi']
         >= lowest_rsi_7
-        * 1.15
+        * 1.15        
     )
 
     # RSI +15% 조건에서는
@@ -2317,7 +2317,7 @@ def analyze_bullish_divergence_close(
     cond_price_15_2_relaxed_9 = (
         prev_candle['close']
         <= lowest_close_15_2
-        * 1.0002
+        * 0.999
     )
 
     # RSI +9% 완화 경로
@@ -2335,7 +2335,7 @@ def analyze_bullish_divergence_close(
     cond_rsi_15_2_relaxed_5 = (
         prev_candle['rsi']
         >= lowest_rsi_7
-        * 1.07
+        * 1.07        
     )
 
     # RSI +5% 조건에서는
@@ -2344,7 +2344,7 @@ def analyze_bullish_divergence_close(
     cond_price_15_2_relaxed_5 = (
         prev_candle['close']
         <= lowest_close_15_2
-        * (1 - 0.0018)
+        * (1 - 0.002)
     )
 
     # RSI +5% 완화 경로
