@@ -2331,11 +2331,11 @@ def analyze_bullish_divergence_close(
     # -------------------------------------------------
 
     # base_7 음봉 최저 RSI보다
-    # 직전봉 RSI가 7% 이상 높으면 완화
+    # 직전봉 RSI가 10% 이상 높으면 완화
     cond_rsi_15_2_relaxed_5 = (
         prev_candle['rsi']
         >= lowest_rsi_7
-        * 1.07        
+        * 1.1        
     )
 
     # RSI +5% 조건에서는
@@ -8185,7 +8185,7 @@ def analyze_sol_link_tail_signal(
     # ---------------------------------------------
     prev_candle_common = df.iloc[-2]
     prev2_candle_common = df.iloc[-3]
-    last_5_candles_common = df.iloc[-6:-1]
+    last_5_candles_common = df.iloc[-8:-1]
 
     prev_open = float(prev_candle_common["open"])
     prev_close = float(prev_candle_common["close"])
@@ -8230,18 +8230,18 @@ def analyze_sol_link_tail_signal(
     # 제약 1
     # =============================================
     # 롱:
-    # 직2전봉이 0.6% 이상 하락봉
+    # 직2전봉이 0.5% 이상 하락봉
     # AND 아래꼬리가 몸통의 1/5 미만
-    # AND 직전봉이 +0.2% 이상 양봉
+    # AND 직전봉이 +0.12% 이상 양봉
     #
     # 숏:
-    # 직2전봉이 0.6% 이상 상승봉
+    # 직2전봉이 0.5% 이상 상승봉
     # AND 위꼬리가 몸통의 1/5 미만
     # AND 직전봉이 -0.2% 이하 음봉
     # =============================================
     if side == "long":
         cond_rule1 = (
-            prev2_return <= -0.006
+            prev2_return <= -0.005
             and prev2_body > 0
             and prev2_lower_tail < prev2_body / 5
             and prev_return >= 0.0012
@@ -8252,12 +8252,12 @@ def analyze_sol_link_tail_signal(
             f"직2전 수익률={prev2_return * 100:.3f}% | "
             f"직2전 아래꼬리/몸통={prev2_lower_tail / prev2_body if prev2_body > 0 else 0:.3f} | "
             f"직전 수익률={prev_return * 100:.3f}% | "
-            "필요: 직2전 -0.6% 이하 + 아래꼬리 몸통 1/5 미만 + 직전 +0.2% 이상 양봉"
+            "필요: 직2전 -0.6% 이하 + 아래꼬리 몸통 1/5 미만 + 직전 +0.12% 이상 양봉"
         )
 
     else:
         cond_rule1 = (
-            prev2_return >= 0.006
+            prev2_return >= 0.005
             and prev2_body > 0
             and prev2_upper_tail < prev2_body / 5
             and prev_return <= -0.0012
@@ -8268,7 +8268,7 @@ def analyze_sol_link_tail_signal(
             f"직2전 수익률={prev2_return * 100:.3f}% | "
             f"직2전 위꼬리/몸통={prev2_upper_tail / prev2_body if prev2_body > 0 else 0:.3f} | "
             f"직전 수익률={prev_return * 100:.3f}% | "
-            "필요: 직2전 +0.6% 이상 + 위꼬리 몸통 1/5 미만 + 직전 -0.2% 이하 음봉"
+            "필요: 직2전 +0.6% 이상 + 위꼬리 몸통 1/5 미만 + 직전 -0.12% 이하 음봉"
         )
 
     # =============================================
@@ -8362,11 +8362,11 @@ def analyze_sol_link_tail_signal(
             candle_tail = candle_upper_tail
 
         cond_body = (
-            candle_body_volatility >= 0.002
+            candle_body_volatility >= 0.001
         )
 
         cond_tail_ratio = (
-            candle_tail / candle_body >= 0.80
+            candle_tail / candle_body >= 0.60
         )
 
         cond_tail_pct = (
@@ -9152,6 +9152,526 @@ def trade_link_tail_strategy(
             f"base={tail_signal['base_candle_name']}"
         )
 
+def trade_special_strategy_8(
+    symbol='SOL/USDT',
+    market_id='SOL/USDT',
+    timeframe='5m'
+):
+    """
+    스페셜8: LINK 연동 SOL 반대 방향 진입 전략.
+
+    공통 제약 룰은 적용하지 않습니다.
+
+    - LINK 롱 보유 시 SOL 롱 진입
+    - LINK 숏 보유 시 SOL 숏 진입
+    - SOL 포지션이 전혀 없을 때만 진입
+    - 5m, 15m 타임프레임에서 동작
+    - 직2전·직1전 종가가 모두 BB 반대 방향 돌파
+    - 직2전 몸통 변동성 0.29% 이상
+    - 직1전 몸통 변동성 0.05% 이상
+    - 직1전 꼬리 조건 충족
+    - 직1전 종가 기준 4% DOGE 손절
+    - 롱 TP 0.6%, 숏 TP 0.4%
+    """
+
+    # =============================================
+    # 1. 지원 타임프레임 확인
+    # =============================================
+    if timeframe not in ("5m", "15m"):
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"지원하지 않는 타임프레임: {timeframe}"
+        )
+        return
+
+    # =============================================
+    # 2. LINK 포지션 방향 확인
+    # =============================================
+    link_position = get_position_amount("LINK/USDT")
+
+    if link_position > 0:
+        side = "long"
+    elif link_position < 0:
+        side = "short"
+    else:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "LINK 포지션 없음"
+        )
+        return
+
+    # =============================================
+    # 3. SOL 기존 포지션 확인
+    # 롱·숏 모두 있으면 진입 금지
+    # =============================================
+    sol_position = get_position_amount(symbol)
+
+    if sol_position != 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"기존 SOL 포지션 {sol_position}개로 진입 금지"
+        )
+        return
+
+    # =============================================
+    # 4. 마진 / 잔고 / 수량 계산
+    # =============================================
+    set_margin_and_leverage(symbol)
+
+    available_usdt = get_available_usdt()
+
+    if available_usdt <= 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "사용 가능 잔고가 없어 진입 금지"
+        )
+        return
+
+    current_price = float(
+        exchange.fetch_ticker(symbol)["last"]
+    )
+
+    if current_price <= 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"현재가 오류: {current_price}"
+        )
+        return
+
+    margin_to_use = available_usdt * 0.5
+    notional = margin_to_use * LEVERAGE
+    amount = round(
+        notional / current_price,
+        3
+    )
+
+    if amount <= 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "주문 수량이 0이라 진입 금지"
+        )
+        return
+
+    # =============================================
+    # 5. BB 포함 캔들 데이터 조회
+    # =============================================
+    df = get_candles_with_bb_current(
+        symbol=symbol,
+        timeframe=timeframe,
+        count=100
+    )
+
+    if df is None or len(df) < 4:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "캔들 데이터 부족"
+        )
+        return
+
+    # =============================================
+    # 6. 기준봉 정의
+    # 현재봉: df.iloc[-1]
+    # 직1전봉: df.iloc[-2]
+    # 직2전봉: df.iloc[-3]
+    # =============================================
+    prev_candle = df.iloc[-2]
+    prev2_candle = df.iloc[-3]
+
+    prev_open = float(prev_candle["open"])
+    prev_high = float(prev_candle["high"])
+    prev_low = float(prev_candle["low"])
+    prev_close = float(prev_candle["close"])
+
+    prev2_open = float(prev2_candle["open"])
+    prev2_close = float(prev2_candle["close"])
+
+    if prev_open <= 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "직1전봉 시가 오류"
+        )
+        return
+
+    if prev2_open <= 0:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "직2전봉 시가 오류"
+        )
+        return
+
+    # =============================================
+    # 7. 직2전·직1전 BB 돌파 조건
+    # =============================================
+    if side == "long":
+        prev_bb_value = float(
+            prev_candle["bb_lower"]
+        )
+        prev2_bb_value = float(
+            prev2_candle["bb_lower"]
+        )
+
+        cond_prev_bb_break = (
+            prev_close < prev_bb_value
+        )
+        cond_prev2_bb_break = (
+            prev2_close < prev2_bb_value
+        )
+        bb_description = (
+            "직2전·직1전 종가가 BB 하단 돌파"
+        )
+
+    else:
+        prev_bb_value = float(
+            prev_candle["bb_upper"]
+        )
+        prev2_bb_value = float(
+            prev2_candle["bb_upper"]
+        )
+
+        cond_prev_bb_break = (
+            prev_close > prev_bb_value
+        )
+        cond_prev2_bb_break = (
+            prev2_close > prev2_bb_value
+        )
+        bb_description = (
+            "직2전·직1전 종가가 BB 상단 돌파"
+        )
+
+    # =============================================
+    # 8. 직1전봉 몸통 변동성 조건
+    # 직1전봉 변동성 0.05% 이상
+    # =============================================
+    prev_body = abs(
+        prev_close - prev_open
+    )
+
+    prev_body_volatility = (
+        prev_body / prev_open
+    )
+
+    cond_prev_min_volatility = (
+        prev_body_volatility >= 0.0005
+    )
+
+    # =============================================
+    # 9. 직2전봉 몸통 변동성 조건
+    # 직2전봉 몸통 변동성 0.29% 이상
+    # =============================================
+    prev2_body = abs(
+        prev2_close - prev2_open
+    )
+
+    prev2_body_volatility = (
+        prev2_body / prev2_open
+    )
+
+    cond_prev2_body_volatility = (
+        prev2_body_volatility >= 0.0029
+    )
+
+
+    # =============================================
+    # 10. 직1전봉 꼬리 조건
+    # 롱: 종가 - low
+    # 숏: high - 종가
+    # =============================================
+    if side == "long":
+        tail_value = (
+            prev_close - prev_low
+        )
+        tail_description = "아래꼬리"
+    else:
+        tail_value = (
+            prev_high - prev_close
+        )
+        tail_description = "위꼬리"
+
+    # 직1전 꼬리가 종가의 0.2% 이상
+    cond_tail_pct = (
+        tail_value >= prev_close * 0.002
+    )
+
+    # 직1전 꼬리가 몸통의 1/3 이상
+    cond_tail_ratio = (
+        prev_body > 0
+        and tail_value >= prev_body / 3
+    )
+
+    # =============================================
+    # 11. 직1전 꼬리 과다 방지
+    # 꼬리가 종가의 0.7%를 넘으면 진입 금지
+    # =============================================
+    cond_tail_not_excessive = (
+        tail_value <= prev_close * 0.007
+    )
+
+    # =============================================
+    # 12. 직전7캔들~직2전봉 범위 조건
+    # 직전7캔들부터 직2전봉까지
+    # =============================================
+    range_candles = df.iloc[-9:-2]
+
+    if len(range_candles) < 7:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "직전7캔들~직2전봉 범위 데이터 부족"
+        )
+        return
+
+    range_lows = range_candles["low"].astype(
+        float
+    )
+
+    range_highs = range_candles["high"].astype(
+        float
+    )
+
+    range_min_low = float(
+        range_lows.min()
+    )
+
+    range_max_high = float(
+        range_highs.max()
+    )
+
+    # =============================================
+    # 13. 직1전 종가 위치 조건
+    # 롱: 직전7~직2전 최저점보다 직1전 종가가 높아야 함
+    # 숏: 직전7~직2전 최고점보다 직1전 종가가 낮아야 함
+    # =============================================
+    if side == "long":
+        cond_range_position = (
+            prev_close > range_min_low
+        )
+        range_description = (
+            "직1전 종가가 직전7~직2전 최저점보다 높음"
+        )
+    else:
+        cond_range_position = (
+            prev_close < range_max_high
+        )
+        range_description = (
+            "직1전 종가가 직전7~직2전 최고점보다 낮음"
+        )
+
+    # =============================================
+    # 14. 전체 조건 판정
+    # =============================================
+    all_conditions_passed = (
+        cond_prev_bb_break
+        and cond_prev2_bb_break
+        and cond_prev2_body_volatility
+        and cond_prev_min_volatility
+        and cond_tail_pct
+        and cond_tail_ratio
+        and cond_tail_not_excessive
+        and cond_range_position
+    )
+
+    condition_debug = {
+        "side": side,
+        "timeframe": timeframe,
+        "prev_close": prev_close,
+        "prev2_close": prev2_close,
+        "prev_body_volatility": (
+            prev_body_volatility
+        ),
+        "prev2_body_volatility": (
+            prev2_body_volatility
+        ),
+        "tail_value": tail_value,
+        "tail_pct": (
+            tail_value / prev_close
+            if prev_close > 0
+            else 0.0
+        ),
+        "tail_ratio": (
+            tail_value / prev_body
+            if prev_body > 0
+            else 0.0
+        ),
+        "prev_bb_break": bool(
+            cond_prev_bb_break
+        ),
+        "prev2_bb_break": bool(
+            cond_prev2_bb_break
+        ),
+        "prev2_body_volatility_condition": bool(
+            cond_prev2_body_volatility
+        ),
+        "prev_min_volatility_condition": bool(
+            cond_prev_min_volatility
+        ),
+        "tail_pct_condition": bool(
+            cond_tail_pct
+        ),
+        "tail_ratio_condition": bool(
+            cond_tail_ratio
+        ),
+        "all_conditions_passed": bool(
+            all_conditions_passed
+        ),
+        "bb_description": bb_description,
+    }
+
+    print(
+        f"[{symbol} SPECIAL8] "
+        f"CONDITIONS={condition_debug}"
+    )
+
+    if not all_conditions_passed:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "진입 조건 미충족"
+        )
+        return
+
+    # =============================================
+    # 12. TP 기준가 계산
+    # =============================================
+    if side == "long":
+        tp_price = (
+            prev_close * 1.006
+        )
+    else:
+        tp_price = (
+            prev_close * 0.996
+        )
+
+    # =============================================
+    # 13. SOL 시장가 진입
+    # =============================================
+    try:
+        if side == "long":
+            order = exchange.create_market_buy_order(
+                symbol,
+                amount
+            )
+        else:
+            order = exchange.create_market_sell_order(
+                symbol,
+                amount
+            )
+
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"ORDER_RESULT={order}"
+        )
+
+    except Exception as e:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"시장가 주문 실패: {e}"
+        )
+        return
+
+    # =============================================
+    # 14. TP 설정
+    # =============================================
+    try:
+        if side == "long":
+            place_tp_long(
+                symbol,
+                amount,
+                tp_price
+            )
+        else:
+            place_tp_short(
+                symbol,
+                amount,
+                tp_price
+            )
+
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"TP 설정 완료 | tp={tp_price:.6f}"
+        )
+
+    except Exception as e:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"TP 설정 실패: {e}"
+        )
+
+        try:
+            if get_position_amount(symbol) != 0:
+                close_position_market(
+                    symbol,
+                    market_id
+                )
+        except Exception as close_error:
+            print(
+                f"[{symbol} SPECIAL8] "
+                f"TP 실패 후 긴급 청산 실패: {close_error}"
+            )
+
+        return
+
+    # =============================================
+    # 15. DOGE 4% 손절 생성
+    # 직1전봉 종가 기준
+    # =============================================
+    try:
+        doge_stop_info = calculate_doge_amount_from_sl(
+            entry_price=prev_close,
+            side=side,
+            sl_pct=0.04
+        )
+
+        doge_amount = doge_stop_info["doge_amount"]
+
+        # 0.1 단위까지 반올림
+        doge_amount = round(
+            doge_amount,
+            1
+        )
+
+        if doge_amount <= 0:
+            raise ValueError(
+                "DOGE 손절 수량이 0 이하"
+            )
+
+        buy_doge_for_sol_stop(doge_amount)
+
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"DOGE 4% 손절 생성 완료 | "
+            f"기준가={prev_close:.6f} | "
+            f"DOGE={doge_amount}"
+        )
+
+    except Exception as e:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"DOGE 손절 생성 실패: {e}"
+        )
+
+        try:
+            if get_position_amount(symbol) != 0:
+                close_position_market(
+                    symbol,
+                    market_id
+                )
+        except Exception as close_error:
+            print(
+                f"[{symbol} SPECIAL8] "
+                f"DOGE 실패 후 긴급 청산 실패: {close_error}"
+            )
+
+        return
+
+    print(
+        f"[{symbol} SPECIAL8] "
+        f"{side.upper()} 진입 완료 | "
+        f"amount={amount} | "
+        f"price={current_price:.6f} | "
+        f"tp={tp_price:.6f} | "
+        f"DOGE={doge_amount}"
+    )
+
+
+
 # 로그확인용 
 import functools
 def trace_elapsed(func):
@@ -9421,6 +9941,21 @@ while True:
                 side='short',
                 tp_pct=0.006
             )
+
+        # =============================================
+        # 스페셜8: LINK 연동 SOL 반대 방향 진입
+        # =============================================
+        trade_special_strategy_8(
+            symbol='SOL/USDT',
+            market_id='SOL/USDT',
+            timeframe='5m'
+        )
+
+        trade_special_strategy_8(
+            symbol='SOL/USDT',
+            market_id='SOL/USDT',
+            timeframe='15m'
+        )
 
         # -------------------------------------------------
         # ADA 보유 시 ADA 전략만 실행 (다른 전략 스킵)
