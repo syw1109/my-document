@@ -9456,7 +9456,123 @@ def trade_special_strategy_8(
         )
 
     # =============================================
-    # 14. 전체 조건 판정
+    # 14. 직전 4캔들 변동성 제약
+    # 5m / 15m 별도 기준 적용
+    # 직전 4캔들 중 -0.5% 이하 하락봉이 없으면 진입 가능 
+    # 직전 4캔들 중 -0.5% 이하 하락봉이 있어도 -0.7% 초과 하락봉이 3개 이상이면 진입 가능
+    # 직전 4캔들 중 -0.8% 이하 하락봉이 없으면 진입 가능
+    # 직전 4캔들 중 -0.8% 이하 하락봉이 있어도 -0.8% 초과 하락봉이 3개 이상이면 진입 가능
+    # =============================================
+    last4_candles = df.iloc[-5:-1]
+
+    if len(last4_candles) < 4:
+        print(
+            f"[{symbol} SPECIAL8] "
+            "직전 4캔들 데이터 부족"
+        )
+        return
+
+    last4_opens = last4_candles["open"].astype(
+        float
+    )
+
+    last4_closes = last4_candles["close"].astype(
+        float
+    )
+
+    last4_returns = (
+        last4_closes - last4_opens
+    ) / last4_opens
+
+    if timeframe == "5m":
+        long_block_threshold = -0.005
+        long_exception_threshold = -0.007
+        long_exception_count_required = 3
+
+        short_block_threshold = 0.005
+        short_exception_threshold = 0.007
+        short_exception_count_required = 3
+
+    elif timeframe == "15m":
+        long_block_threshold = -0.008
+        long_exception_threshold = -0.008
+        long_exception_count_required = 3
+
+        short_block_threshold = 0.008
+        short_exception_threshold = 0.008
+        short_exception_count_required = 3
+
+    else:
+        print(
+            f"[{symbol} SPECIAL8] "
+            f"지원하지 않는 타임프레임: {timeframe}"
+        )
+        return
+
+    if side == "long":
+        # 롱 기준
+        # -0.5% 또는 -0.8% 이하 하락봉이 있는지 확인
+        block_count = int(
+            (
+                last4_returns
+                <= long_block_threshold
+            ).sum()
+        )
+
+        # -0.7% 또는 -0.8% 초과 하락봉 개수
+        exception_count = int(
+            (
+                last4_returns
+                < long_exception_threshold
+            ).sum()
+        )
+
+        cond_volatility_allowed = (
+            block_count == 0
+            or exception_count >= long_exception_count_required
+        )
+
+        volatility_description = (
+            f"롱 기준 직전4캔들 "
+            f"{long_block_threshold * 100:.1f}% 이하 하락봉 "
+            f"{block_count}개 / "
+            f"{long_exception_threshold * 100:.1f}% 초과 하락봉 "
+            f"{exception_count}개"
+        )
+
+    else:
+        # 숏 기준
+        # +0.5% 또는 +0.8% 이상 상승봉이 있는지 확인
+        block_count = int(
+            (
+                last4_returns
+                >= short_block_threshold
+            ).sum()
+        )
+
+        # +0.7% 또는 +0.8% 초과 상승봉 개수
+        exception_count = int(
+            (
+                last4_returns
+                > short_exception_threshold
+            ).sum()
+        )
+
+        cond_volatility_allowed = (
+            block_count == 0
+            or exception_count >= short_exception_count_required
+        )
+
+        volatility_description = (
+            f"숏 기준 직전4캔들 "
+            f"+{short_block_threshold * 100:.1f}% 이상 상승봉 "
+            f"{block_count}개 / "
+            f"+{short_exception_threshold * 100:.1f}% 초과 상승봉 "
+            f"{exception_count}개"
+        )
+
+    # =============================================
+    # 15. 전체 조건 판정
     # =============================================
     all_conditions_passed = (
         cond_prev_bb_break
@@ -9467,6 +9583,7 @@ def trade_special_strategy_8(
         and cond_tail_ratio
         and cond_tail_not_excessive
         and cond_range_position
+        and cond_volatility_allowed
     )
 
     condition_debug = {
@@ -9513,6 +9630,17 @@ def trade_special_strategy_8(
             all_conditions_passed
         ),
         "bb_description": bb_description,
+        "last4_returns": [
+            float(value)
+            for value in last4_returns.tolist()
+        ],
+        "volatility_block_count": block_count,
+        "volatility_exception_count": exception_count,
+        "volatility_allowed_condition": bool(
+            cond_volatility_allowed
+        ),
+        "volatility_description": volatility_description,
+
     }
 
     print(
