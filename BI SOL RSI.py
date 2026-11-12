@@ -1188,7 +1188,148 @@ def ma18_6day_volatility_trend():
 
 
 # ===================== 메인 루프 =====================
+def trade_once_sol():
+    """매일 09:00에 실행하는 기존 SOL 전략"""
+    set_margin_and_leverage(SOL_SYMBOL)
 
+    now = now_kst()
+
+    if now.weekday() == 5:
+        print("토요일은 매매 금지")
+        return
+
+    if has_position(MARKET_ID_SOL):
+        print("기존 SOL 포지션이 있어서 거래하지 않음")
+        return
+
+    sat_close = get_last_saturday_6_close()
+    current_price = float(
+        exchange.fetch_ticker(SOL_SYMBOL)["last"]
+    )
+
+    # =============================================
+    # CME 편차 1% 조건
+    # =============================================
+    deviation = abs(
+        current_price - sat_close
+    ) / sat_close
+
+    if deviation < 0.01:
+        print(
+            f"[09:00 SOL] CME 편차 "
+            f"{deviation * 100:.2f}% 미만으로 진입 금지 | "
+            f"토요일 기준가={sat_close:.2f}, "
+            f"현재가={current_price:.2f}"
+        )
+        return
+
+    print(
+        f"[09:00 SOL] CME 편차 "
+        f"{deviation * 100:.2f}% 충족 | "
+        f"토요일 기준가={sat_close:.2f}, "
+        f"현재가={current_price:.2f}"
+    )
+
+    # =============================================
+    # 수량 계산
+    # =============================================
+    available_usdt = get_available_usdt()
+    margin_to_use = available_usdt * 0.35
+    notional = margin_to_use * LEVERAGE
+    amount = round(
+        notional / current_price,
+        3
+    )
+
+    if amount <= 0:
+        print("주문 수량이 0이라서 중단")
+        return
+
+    # =============================================
+    # TP / SL 가격
+    # =============================================
+    tp_price_long = current_price * 1.013
+    tp_price_short = current_price * 0.989
+
+    sl_price_long = current_price * 0.96
+    sl_price_short = current_price * 1.04
+
+    print(
+        f"[INFO] sat_close={sat_close}, "
+        f"current_price={current_price}"
+    )
+    print(now)
+
+    # =============================================
+    # 롱 진입
+    # =============================================
+    if current_price <= sat_close * 0.99:
+        try:
+            exchange.create_market_buy_order(
+                SOL_SYMBOL,
+                amount
+            )
+
+            place_tp_long(
+                SOL_SYMBOL,
+                amount,
+                tp_price_long
+            )
+
+            place_sl_long(
+                SOL_SYMBOL,
+                sl_price_long
+            )
+
+            print(
+                f"롱 진입 | amount={amount} | "
+                f"price={current_price} | "
+                f"tp={tp_price_long}"
+            )
+
+        except Exception as e:
+            print(
+                f"롱 진입 또는 TP/SL 설정 실패: {e}"
+            )
+
+        return
+
+    # =============================================
+    # 숏 진입
+    # =============================================
+    elif current_price >= sat_close * 1.01:
+        try:
+            exchange.create_market_sell_order(
+                SOL_SYMBOL,
+                amount
+            )
+
+            place_tp_short(
+                SOL_SYMBOL,
+                amount,
+                tp_price_short
+            )
+
+            place_sl_short(
+                SOL_SYMBOL,
+                sl_price_short
+            )
+
+            print(
+                f"숏 진입 | amount={amount} | "
+                f"price={current_price} | "
+                f"tp={tp_price_short}"
+            )
+
+        except Exception as e:
+            print(
+                f"숏 진입 또는 TP/SL 설정 실패: {e}"
+            )
+
+        return
+
+    else:
+        print("진입 조건 없음")
 
 # ===================== 확정봉 + RSI 계산 +거래량 추가 =====================
 
@@ -9340,7 +9481,7 @@ def trade_special_strategy_8(
 
     # =============================================
     # 8. 직1전봉 몸통 변동성 조건
-    # 직1전봉 변동성 0.05% 이상
+    # 직1전봉 변동성 0.1% 이상
     # =============================================
     prev_body = abs(
         prev_close - prev_open
@@ -9351,7 +9492,7 @@ def trade_special_strategy_8(
     )
 
     cond_prev_min_volatility = (
-        prev_body_volatility >= 0.0005
+        prev_body_volatility >= 0.001
     )
 
     # =============================================
@@ -9397,7 +9538,25 @@ def trade_special_strategy_8(
         prev_body > 0
         and tail_value >= prev_body / 3
     )
-
+    # =============================================
+    # 직1전봉 방향 조건
+    # 롱: 음봉
+    # 숏: 양봉
+    # =============================================
+    if side == "long":
+        cond_prev_candle_direction = (
+            prev_close < prev_open
+        )
+        prev_direction_description = (
+            "직1전봉 음봉"
+        )
+    else:
+        cond_prev_candle_direction = (
+            prev_close > prev_open
+        )
+        prev_direction_description = (
+            "직1전봉 양봉"
+        )
     # =============================================
     # 11. 직1전 꼬리 과다 방지
     # 꼬리가 종가의 0.7%를 넘으면 진입 금지
@@ -9584,6 +9743,7 @@ def trade_special_strategy_8(
         and cond_tail_not_excessive
         and cond_range_position
         and cond_volatility_allowed
+        and cond_prev_candle_direction
     )
 
     condition_debug = {
@@ -9629,6 +9789,10 @@ def trade_special_strategy_8(
         "all_conditions_passed": bool(
             all_conditions_passed
         ),
+        "prev_candle_direction_condition": bool(
+            cond_prev_candle_direction
+        ),
+        "prev_direction_description": prev_direction_description,        
         "bb_description": bb_description,
         "last4_returns": [
             float(value)
@@ -10500,11 +10664,11 @@ while True:
 
 
             
-        # # 09:00 KST SOL 기존 전략 (하루 1 회)  cme 전략 보류
-        # if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
-        #     last_run_date = now.date()
-        #     if not has_position(MARKET_ID_SOL):
-        #         trade_once_sol()
+        # 09:00 KST SOL 기존 전략 (하루 1 회)  cme 전략 보류
+        if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
+            last_run_date = now.date()
+            if not has_position(MARKET_ID_SOL):
+                trade_once_sol()
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
