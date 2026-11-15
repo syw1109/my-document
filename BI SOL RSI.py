@@ -10665,10 +10665,10 @@ while True:
 
             
         # 09:00 KST SOL 기존 전략 (하루 1 회)  cme 전략 보류
-        if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
-            last_run_date = now.date()
-            if not has_position(MARKET_ID_SOL):
-                trade_once_sol()
+        # if now.hour == 9 and now.minute == 0 and last_run_date != now.date():
+        #     last_run_date = now.date()
+        #     if not has_position(MARKET_ID_SOL):
+        #         trade_once_sol()
                                         
 
 # 코드 도는시간8초, +타임슬립 : 쿨타임
